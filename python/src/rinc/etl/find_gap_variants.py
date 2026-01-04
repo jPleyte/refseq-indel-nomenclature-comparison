@@ -14,7 +14,7 @@ from rinc.util import chromosome_map
 import csv
 from rinc.util.uta_db import UtaDb
 
-class FindGaps(object):
+class FindGapVariants(object):
     '''
     Query the UTA database to find insertion or deletion alignment differences between hg19 and RefSeq transcript sequences 
     '''
@@ -162,9 +162,10 @@ class FindGaps(object):
         self._logger.info(f"Wrote {len(variants)} variants to {out_filename}")
 
 def _parse_args():
-    parser = argparse.ArgumentParser(prog='clb', description='Query UTA for alignment differences')
-    parser.add_argument("--version", action="version", version="rinc 0.0.1")
-    parser.add_argument("--fasta", help="Reference fasta", required=True)
+    parser = argparse.ArgumentParser(description='Query UTA for alignment differences')
+    parser.add_argument("--version", action="version", version="0.0.1")
+    parser.add_argument("--fasta", help="Geneome reference (fasta)", required=True)
+    parser.add_argument("--uta_schema", help="UTA db schema", required=True)
     parser.add_argument("--out", help="output file (csv)", required=True)
     args = parser.parse_args()
     return args
@@ -172,11 +173,10 @@ def _parse_args():
 def main():
     args = _parse_args()
     
-    fg = FindGaps('uta_20241220')
-    #fg = FindGaps('uta_20240523b')
-    gaps = fg.find_gaps()
-    variants = fg.get_variants(gaps, args.fasta)
-    fg.write(args.out, variants)
+    fgv = FindGapVariants(args.uta_schema)
+    gaps = fgv.find_gaps()
+    variants = fgv.get_variants(gaps, args.fasta)
+    fgv.write(args.out, variants)
     
 if __name__ == '__main__':
     main()

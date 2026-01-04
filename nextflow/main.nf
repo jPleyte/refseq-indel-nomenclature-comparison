@@ -1,12 +1,12 @@
 #!/usr/bin/env nextflow
 
 // Import the process from your modules folder
-include { findGaps } from './modules/local/find_gaps.nf'
+include { findGapVariants } from './modules/local/find_gap_variants.nf'
 
 workflow {
     main:
-    // params.fasta should be defined in nextflow.config or on the command line
+    uta_schema = channel.value(params.uta_schema)
     fasta_ch = channel.fromPath(params.fasta, checkIfExists: true)
-
-    findGaps(fasta_ch)
+    
+    findGapVariants(uta_schema, fasta_ch)
 }
