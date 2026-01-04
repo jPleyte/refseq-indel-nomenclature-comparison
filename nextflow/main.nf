@@ -5,5 +5,8 @@ include { findGaps } from './modules/local/find_gaps.nf'
 
 workflow {
     main:
-    findGaps()
+    // params.fasta should be defined in nextflow.config or on the command line
+    fasta_ch = channel.fromPath(params.fasta, checkIfExists: true)
+
+    findGaps(fasta_ch)
 }

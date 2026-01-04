@@ -3,13 +3,17 @@
 /*
  * Use echo to print 'Hello World!' to a file
  */
-process sayHello {
+process findGaps {
+    publishDir "${params.outdir}", mode: 'copy'
+
+    input:
+    path fasta
 
     output:
-        path "gap_transcript_variants.csv", emit: gap_transcript_variants
+    path "gap_transcript_variants.csv", emit: gap_transcript_variants
 
     script:
     """
-    python3 ${projectDir}/python/src/rinc/etc/find_gaps.py --out gap_transcript_variants.csv --fasta ${projectDir}/Homo_sapiens_assembly19.fasta
+    python -m rinc.etl.find_gaps --out gap_transcript_variants.csv --fasta ${fasta}
     """
 }

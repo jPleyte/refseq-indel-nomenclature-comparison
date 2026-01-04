@@ -209,3 +209,11 @@ __marimo__/
 annovar/humandb/
 /.project
 /.pydevproject
+
+# Nextflow files
+.vscode/
+data/
+nextflow/work
+nextflow/results
+nextflow/.nextflow
+nextflow/.nextflow.log.*
