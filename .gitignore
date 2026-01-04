@@ -208,3 +208,4 @@ __marimo__/
 
 annovar/humandb/
 /.project
+/.pydevproject
