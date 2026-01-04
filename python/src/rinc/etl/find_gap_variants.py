@@ -119,21 +119,6 @@ class FindGapVariants(object):
                               }
         
         return variant_transcript
-    
-    def _get_alternate_base(self, base):
-        """
-        Return any base as long as it isn't the same as the parameter base
-        """
-        if base == 'A':
-            return 'G'
-        elif base =='T':
-            return 'C'
-        elif base == 'G':
-            return 'T'
-        elif base =='C':
-            return 'A'
-        else:
-            raise ValueError(f"Unknown base {base}")
         
     def get_variants(self, gaps: list[dict], fasta_file):
         """
@@ -144,14 +129,15 @@ class FindGapVariants(object):
         for x in gaps:
             chromosome = chromosome_map.get_ncbi(x['alt_ac'])
             reference_base = fasta.fetch(reference=chromosome, start=x['five_bases_downstream'], end=x['five_bases_downstream']+1)
-            alt_base = self._get_alternate_base(reference_base)
-            
-            variant_transcripts.append(self._get_variant_transcript(x, chromosome, x['five_bases_downstream'], reference_base, alt_base))
-        
+                        
+            for alt in [x for x in ['A', 'T', 'G', 'C'] if x != reference_base]:
+                variant_transcripts.append(self._get_variant_transcript(x, chromosome, x['five_bases_downstream'], reference_base, alt))
+
         return variant_transcripts
     
     def write(self, out_filename, variants):
         """
+        Write variant and gap information to csv file
         """
         headers = variants[0].keys()
         with open(out_filename, 'w', newline='') as output:

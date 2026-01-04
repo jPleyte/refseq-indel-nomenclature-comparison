@@ -1,0 +1,15 @@
+{
+    "editor.quickSuggestions": {
+        "other": "off",
+        "comments": "off",
+        "strings": "off"
+    },
+    "nextflow.telemetry.enabled": true,
+
+    "python.analysis.extraPaths": [
+        "./python/src"
+    ],
+    "python.autoComplete.extraPaths": [
+        "./python/src"
+    ]
+}

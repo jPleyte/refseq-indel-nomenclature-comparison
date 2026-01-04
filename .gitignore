@@ -211,7 +211,6 @@ annovar/humandb/
 /.pydevproject
 
 # Nextflow files
-.vscode/
 data/
 nextflow/work
 nextflow/results

@@ -7,8 +7,9 @@ process findGapVariants {
     publishDir "${params.outdir}", mode: 'symlink'
 
     input:
-    path fasta
     val uta_schema
+    path fasta
+    
 
     output:
     path "gaps_and_variants.csv", emit: gaps_and_variants
