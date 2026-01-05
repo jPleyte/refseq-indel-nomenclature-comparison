@@ -5,7 +5,7 @@ Generates a list of variants that are just downstream from insertion or deletion
    
 @author: pleyte
 '''
-import logging
+import logging.config
 import argparse
 
 import re
@@ -13,6 +13,7 @@ import pysam
 from rinc.util import chromosome_map
 import csv
 from rinc.util.uta_db import UtaDb
+from rinc.util.log_config import LogConfig
 
 class FindGapVariants(object):
     '''
@@ -128,7 +129,9 @@ class FindGapVariants(object):
         
         for x in gaps:
             chromosome = chromosome_map.get_ncbi(x['alt_ac'])
-            reference_base = fasta.fetch(reference=chromosome, start=x['five_bases_downstream'], end=x['five_bases_downstream']+1)
+            
+            # subtract one because pysam uses zero-based positions
+            reference_base = fasta.fetch(reference=chromosome, start=x['five_bases_downstream']-1, end=x['five_bases_downstream'])
                         
             for alt in [x for x in ['A', 'T', 'G', 'C'] if x != reference_base]:
                 variant_transcripts.append(self._get_variant_transcript(x, chromosome, x['five_bases_downstream'], reference_base, alt))
@@ -157,6 +160,8 @@ def _parse_args():
     return args
     
 def main():
+    logging.config.dictConfig(LogConfig().stdout_config)
+    
     args = _parse_args()
     
     fgv = FindGapVariants(args.uta_schema)
