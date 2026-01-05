@@ -29,3 +29,12 @@ perl annovar/annotate_variation.pl -buildver hg19 -downdb -webfrom annovar refGe
 # Customise the terminal command prompt
 printf "export PS1='\\[\\e[3;36m\\]\${PWD#/workspaces/} ->\\[\\e[0m\\] '\n" >> $HOME/.bashrc
 export PS1='\[\e[3;36m\]${PWD#/workspaces/} ->\[\e[0m\] '
+
+NEXTFLOW_DIR="/workspaces/$(basename $CONTAINER_WORKSPACE_FOLDER)/nextflow"
+cat << 'EOF' >> $HOME/.bashrc
+cleanup() {
+    rm -f $NEXTFLOW_DIR/.nextflow.log*
+    rm -f $NEXTFLOW_DIR/results/*    
+    echo "Removed nextflow logs and results"
+}
+EOF

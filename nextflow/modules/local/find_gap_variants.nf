@@ -1,7 +1,7 @@
 #!/usr/bin/env nextflow
 
 /*
- * Use echo to print 'Hello World!' to a file
+ * Query UTA database to find siple insertion or deletions and then create downstream variants.
  */
 process findGapVariants {
     publishDir "${params.outdir}", mode: 'symlink'
@@ -10,7 +10,6 @@ process findGapVariants {
     val uta_schema
     path fasta
     
-
     output:
     path "gaps_and_variants.csv", emit: gaps_and_variants
 
