@@ -1,7 +1,5 @@
 '''
-Extract transcript details from an annovar multianno file.
-Compare annovar and hgvs nomenclature.
-Join gaps, annovar, and hgvs csvs into one file along with comparison results.
+Extract transcript details from an annovar multianno file and write to a new csv. 
 
 Created on Jan 5, 2026
 
@@ -31,12 +29,30 @@ class AnnovarMultianno(object):
         with open(annovar_multianno_file, mode='r', encoding='utf-8') as f:        
             reader = csv.DictReader(f)
             for row in reader:
-                for row_transcript in row['Gene.refGeneWithVer'].split(','):
+                for row_transcript in self._get_row_transcripts(row['Gene.refGeneWithVer']):
                     variant_transcript = self._get_parse_transcript(row_transcript, row)
                     variant_transcripts.append(variant_transcript)
         
         return variant_transcripts
     
+    def _get_row_transcripts(self, gene_ref_gene_with_ver):
+        """
+        The annovar multianno file's Gene.refGeneWithVer lists the transcripts at this location. 
+        The transcripts may be associated with multiple genes so there may two delimiters used as in: 
+        NM_001242366.3,NM_080669.6;NM_015077.4
+        
+        The semi-colon delimits transcripts associated with different genes. 
+        The comma delimts transcripts on the same gene.  
+        """
+        all_transcripts = []
+        
+        gene_groups = gene_ref_gene_with_ver.split(';')
+        for g in gene_groups:
+            all_transcripts.extend(g.split(','))
+        
+        return all_transcripts
+        
+        
     def _get_cdna_values(self, transcript: str, gene_detail_field: str):
         """
         The Annovar GeneDetail.refGeneWithVer field which is delimited by ';' and ':'
@@ -53,7 +69,9 @@ class AnnovarMultianno(object):
                 
             if gene_transcript == transcript:
                 return c_dot, exon 
-                
+        
+        # No information in this field for the current transcript 
+        return None, None
         
     def _get_protein_values(self, transcript: str, aa_change_field: str):
         """
@@ -67,8 +85,8 @@ class AnnovarMultianno(object):
             if aa_transcript == transcript:
                 return gene, exon, c_dot, p_dot
         
-        raise ValueError("Unexpected AAChange.refGeneWithVer contents")
-                
+        # No information in this field for the current transcript 
+        return None, None, None, None
             
         
     def _get_parse_transcript(self, transcript: str, row: dict):
@@ -78,7 +96,7 @@ class AnnovarMultianno(object):
         variant_transcript = VariantTranscript(row['Chr'], row['Start'], row['Ref'], row['Alt'], transcript)
         variant_transcript.genomic_region_type = row['Func.refGeneWithVer']
         variant_transcript.protein_variant_type = row['ExonicFunc.refGeneWithVer']
-        
+                    
         cdna_c_dot, cdna_exon = self._get_cdna_values(transcript, row['GeneDetail.refGeneWithVer'])
         aa_gene, aa_exon, aa_c_dot, aa_p_dot = self._get_protein_values(transcript, row['AAChange.refGeneWithVer'])
         
@@ -90,7 +108,7 @@ class AnnovarMultianno(object):
             variant_transcript.c_dot = cdna_c_dot
         elif aa_c_dot:
             variant_transcript.c_dot = aa_c_dot
-            variant_transcript.notes.append(f"c. is from protein field")
+            variant_transcript.notes.append("c. is from protein field")
         
         # Exon
         if cdna_exon and aa_exon:
