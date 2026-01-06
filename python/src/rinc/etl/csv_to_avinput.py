@@ -27,8 +27,18 @@ class CsvToAvinput(object):
         """
         Read the csv and return list of variants 
         """         
-        reader = csv.DictReader(in_stream)
-        return list(reader)
+        variants = {}
+        
+        for row in csv.DictReader(in_stream):
+            chromosome = row['chromosome']
+            position = row['position']
+            reference = row['reference']
+            alt = row['alt']
+            key = f"{chromosome}-{position}-{reference}-{alt}"
+            if key not in variants:
+                variants[key] = row
+        
+        return variants.values()
 
     def write(self, variants: list, out_stream):
         """
