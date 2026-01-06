@@ -10,7 +10,7 @@ process convertAnnovarMultiannoToCsv {
     path multianno
     
     output:
-    path "annovar.avinput", emit: annovar_nomenclature
+    path "annovar_nomenclature.csv", emit: annovar_nomenclature
 
     script:
     """

@@ -79,7 +79,10 @@ class JoinAndCompare(object):
                        'cdna_transcript': cdna_transcript}
         
         if hgvs_row.empty: 
-            raise ValueError("hgvs should always have a result")
+            # jdebug: 
+            raise ValueError(f"hgvs should always have a result: {comparison}")
+            #self._logger.error(f"hgvs should always have a result: {comparison}")
+            
         elif annovar_row.empty:
             comparison['differences'] = 'hgvs_only'
         else:            

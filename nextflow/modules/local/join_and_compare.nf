@@ -16,7 +16,7 @@ process joinAndCompare {
 
     script:
     """
-    python -m rinc.etl.join_and_compare \
+    python -m rinc.join_and_compare \
         --gap_variants ${gaps_and_variants} \
         --hgvs_nomenclature ${hgvs_nomenclature} \
         --annovar_nomenclature ${annovar_nomenclature} \

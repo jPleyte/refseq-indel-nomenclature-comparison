@@ -60,16 +60,23 @@ class AnnovarMultianno(object):
         if gene_detail_field == '.':
             return None, None
         
-        for gene_detail in gene_detail_field.split(';'):
-            if 'exon' in gene_detail:            
-                gene_transcript, exon, c_dot = gene_detail.split(':')
-            else:
-                exon = None
-                gene_transcript, c_dot = gene_detail.split(':')
+        try:
+            for gene_detail in gene_detail_field.split(';'):
+                if 'exon' in gene_detail:            
+                    gene_transcript, exon, c_dot = gene_detail.split(':')
+                elif gene_detail.startswith('dist='):
+                    # dist=nnn means intergenic. We skipt these in tfx. 
+                    return None, None
+                else:
+                    exon = None
+                    gene_transcript, c_dot = gene_detail.split(':')
+                    
+                if gene_transcript == transcript:
+                    return c_dot, exon 
+        except ValueError:
+            self._logger.warning(f"Could not parse GeneDetail.refGeneWithVer field for {transcript}: {gene_detail_field}")            
+            raise
                 
-            if gene_transcript == transcript:
-                return c_dot, exon 
-        
         # No information in this field for the current transcript 
         return None, None
         
