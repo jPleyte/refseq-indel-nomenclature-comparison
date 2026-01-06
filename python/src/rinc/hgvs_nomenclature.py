@@ -41,7 +41,7 @@ class HgvsNomenclature(object):
                                                   int(row['position']),
                                                   row['reference'], 
                                                   row['alt'],
-                                                  row['refseq_transcript']))
+                                                  row['cdna_transcript']))
         
         self._logger.debug(f"Read {len(variants)} variants from {variants_file}")
         return variants
@@ -120,7 +120,7 @@ class HgvsNomenclature(object):
         with open(out_filename, 'w', newline='') as output:
             writer = csv.writer(output)
             writer.writerow(headers)
-            
+
             for v in variant_transcripts:
                 writer.writerow([v.chromosome, v.position, v.reference, v.alt, 
                                  v.cdna_transcript, v.protein_transcript, 

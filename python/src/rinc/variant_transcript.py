@@ -13,7 +13,13 @@ class VariantTranscript:
 
         self.cdna_transcript = cdna_transcript
         self.protein_transcript = None
-        
+
         self.strand = None
         self.notes = []
+        
+        self.genomic_region_type = None
+        self.protein_variant_type = None
+        
 
+    def __str__(self):
+        return f"{self.chromosome}-{self.position}-{self.reference}-{self.alt} {self.cdna_transcript}:{self.c_dot}"

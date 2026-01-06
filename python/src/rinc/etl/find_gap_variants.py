@@ -20,7 +20,6 @@ class FindGapVariants(object):
     Query the UTA database to find insertion or deletion alignment differences between hg19 and RefSeq transcript sequences 
     '''
 
-
     def __init__(self, uta_schema):
         '''
         Constructor
@@ -71,9 +70,9 @@ class FindGapVariants(object):
                 # We found the first Indel
                 return current_genomic_location, op
             else:
-                raise ValueError("jdebug Should not happen a")
+                raise ValueError("Should not happen a")
         
-        raise ValueError("jdebug Should not happen b")
+        raise ValueError("Should not happen b")
                 
     def find_gaps(self):
         """
@@ -97,19 +96,21 @@ class FindGapVariants(object):
             # Make sure the downstream position is still on the exon because we aren't interested in intronic changes
             if exon_start <= five_bases_downstream <= exon_end:
                 t['five_bases_downstream'] = five_bases_downstream
-                t['gap_type'] = 'deletion' if gap_type == 'D' else 'insertion' 
+                t['gap_type'] = 'deletion' if gap_type == 'D' else 'insertion'  
                 gaps.append(t)
-        
+
         return gaps
 
     def _get_variant_transcript(self, gap, chromosome, position, reference, alt):
         """
+        Create a VariantTranscript object from the query result row 
         """
-        variant_transcript = {'refseq_transcript': gap['tx_ac'],
+        variant_transcript = {
                               'chromosome': chromosome,
                               'position': position,
                               'reference': reference,
                               'alt': alt,
+                              'cdna_transcript': gap['tx_ac'],
                               'strand': gap['alt_strand'],
                               'cigar': gap['cigar'],
                               'alt_start_i': gap['alt_start_i'],
@@ -127,14 +128,18 @@ class FindGapVariants(object):
         fasta = pysam.FastaFile(fasta_file)
         variant_transcripts = []
         
-        for x in gaps:
-            chromosome = chromosome_map.get_ncbi(x['alt_ac'])
+        for row in gaps:
+            chromosome = chromosome_map.get_ncbi(row['alt_ac'])
             
             # subtract one because pysam uses zero-based positions
-            reference_base = fasta.fetch(reference=chromosome, start=x['five_bases_downstream']-1, end=x['five_bases_downstream'])
-                        
-            for alt in [x for x in ['A', 'T', 'G', 'C'] if x != reference_base]:
-                variant_transcripts.append(self._get_variant_transcript(x, chromosome, x['five_bases_downstream'], reference_base, alt))
+            reference_base = fasta.fetch(reference=chromosome, start=row['five_bases_downstream']-1, end=row['five_bases_downstream'])
+            
+            arbitrary_different_base = { 'A': 'G', 'T': 'C', 'G': 'T', 'C': 'A' }
+            variant_transcripts.append(self._get_variant_transcript(row, 
+                                                                    chromosome, 
+                                                                    row['five_bases_downstream'], 
+                                                                    reference_base, 
+                                                                    arbitrary_different_base[reference_base]))
 
         return variant_transcripts
     
