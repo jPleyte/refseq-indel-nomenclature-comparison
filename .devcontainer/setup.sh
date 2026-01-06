@@ -31,8 +31,11 @@ printf "export PS1='\\[\\e[3;36m\\]\${PWD#/workspaces/} ->\\[\\e[0m\\] '\n" >> $
 export PS1='\[\e[3;36m\]${PWD#/workspaces/} ->\[\e[0m\] '
 
 NEXTFLOW_DIR="/workspaces/$(basename $CONTAINER_WORKSPACE_FOLDER)/nextflow"
+
 cat << 'EOF' >> $HOME/.bashrc
 cleanup() {
+    cd $NEXTFLOW_DIR
+    nextflow clean -f 
     rm -f $NEXTFLOW_DIR/.nextflow.log*
     rm -f $NEXTFLOW_DIR/results/*    
     echo "Removed nextflow logs and results"

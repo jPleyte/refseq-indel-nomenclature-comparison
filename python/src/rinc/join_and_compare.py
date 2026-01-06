@@ -1,6 +1,6 @@
 '''
 Created on Jan 5, 2026
-Reader Gather gap, hgvs, and annovar information; perform comparison, and write results to csv.
+Gather gap, hgvs, and annovar information; perform comparison, and write results to csv.
   
 @author: pleyte
 '''
