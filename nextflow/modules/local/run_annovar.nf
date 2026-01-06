@@ -14,8 +14,8 @@ process runAnnovar {
     
     script:
     """    
-    $ANNOVAR_HOME/table_annovar.pl ${annovar_avinput} \
-    $ANNOVAR_HOME/humandb/ \
+    \$ANNOVAR_HOME/table_annovar.pl ${annovar_avinput} \
+    \$ANNOVAR_HOME/humandb/ \
     --buildver hg19 \
     --out annovar \
     --protocol refGeneWithVer \

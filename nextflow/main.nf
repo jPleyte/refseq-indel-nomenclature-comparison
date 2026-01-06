@@ -15,10 +15,15 @@ workflow {
     findGapVariants(uta_schema, fasta_ch)
 
     // Generate nomenclature using hgvs package
-    // hgvsNomenclature(findGapVariants.out.gaps_and_variants)
+    hgvsNomenclature(findGapVariants.out.gaps_and_variants)
 
     // Convert variant list to annovar avinput file 
     csvToAvinput(findGapVariants.out.gaps_and_variants)
 
     runAnnovar(csvToAvinput.out.annovar_avinput)
+
+    convertAnnovarMultiannoToCsv(runAnnovar.out.multianno)
+
+    joinAndCompare()
+
 }
