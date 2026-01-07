@@ -48,8 +48,8 @@ class FindGapVariants(object):
                                   'NC_000021.8',  'NC_000022.10', 'NC_000023.10', 'NC_000024.9'
                               ) 
                    AND cigar ~ '{cigar_regex}'
-                 LIMIT 10;
                 """
+        #                  LIMIT 1000;
         with UtaDb() as uta_db:
             transcript_gaps = uta_db.query(sql)
             self._logger.debug(f"Found {len(transcript_gaps)} transcript gaps")
@@ -135,6 +135,10 @@ class FindGapVariants(object):
             reference_base = fasta.fetch(reference=chromosome, start=row['five_bases_downstream']-1, end=row['five_bases_downstream'])
             
             arbitrary_different_base = { 'A': 'G', 'T': 'C', 'G': 'T', 'C': 'A' }
+            
+            if reference_base == 'N':
+                self._logger.info(f"Invalid variant having base 'N': {chromosome} {row['alt_ac']} {row['five_bases_downstream']}")
+                continue
             variant_transcripts.append(self._get_variant_transcript(row, 
                                                                     chromosome, 
                                                                     row['five_bases_downstream'], 

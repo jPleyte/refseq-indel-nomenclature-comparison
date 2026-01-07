@@ -5,12 +5,9 @@ Gather gap, hgvs, and annovar information; perform comparison, and write results
 @author: pleyte
 '''
 import argparse
-import csv
 import logging.config
 from rinc.util.log_config import LogConfig
-from rinc.variant_transcript import VariantTranscript
 import pandas as pd
-import pandas
 from functools import reduce
 
 class JoinAndCompare(object):
@@ -35,13 +32,15 @@ class JoinAndCompare(object):
         """
         Return hgvs nomenclature in a dict keyed by variant and transcript
         """
-        return pd.read_csv(hgvs_nomenclature_file)
+        hgvs_df = pd.read_csv(hgvs_nomenclature_file, dtype={'hu.exon': str})
+        return hgvs_df
 
     def get_annovar_nomenclature(self, annovar_nomenclature_file) -> pd.DataFrame:
         """
         Return annovar nomenclature in a dict keyed by variant and transcript
         """
-        return pd.read_csv(annovar_nomenclature_file)
+        annovar_df = pd.read_csv(annovar_nomenclature_file, dtype={'annovar.exon': str})
+        return annovar_df 
 
     def get_comparison(self, gaps_df: pd.DataFrame, hgvs_df: pd.DataFrame, annovar_df: pd.DataFrame):
         """
@@ -63,7 +62,15 @@ class JoinAndCompare(object):
             cdna_transcript = row.cdna_transcript
             
             hgvs_row = hgvs_df[create_mask(hgvs_df, chromosome, position, reference, alt, cdna_transcript)]
-            annovar_row = annovar_df[create_mask(annovar_df, chromosome, position, reference, alt, cdna_transcript)]
+            
+            # Ideally the mask would select exactly one row but i've seen duplicates come from annovar 
+            # when the same transcript is found on multiple genes, so it is neccessary to use ``.drop_duplicates()``
+            annovar_row = annovar_df[create_mask(annovar_df, chromosome, position, reference, alt, cdna_transcript)].drop_duplicates()
+
+            if hgvs_row.shape[0] > 1:
+                raise ValueError(f"hgvs nomenclature has multiple rows for: {chromosome, position, reference, alt, cdna_transcript}")
+            elif annovar_row.shape[0] > 1: 
+                raise ValueError(f"annovar nomenclature has multiple rows for: {chromosome, position, reference, alt, cdna_transcript}")
             
             comparisons.append(self._get_comparison(chromosome, position, reference, alt, cdna_transcript, hgvs_row, annovar_row))
         
@@ -79,7 +86,7 @@ class JoinAndCompare(object):
                        'cdna_transcript': cdna_transcript}
         
         if hgvs_row.empty: 
-            # jdebug: 
+            # jdebug  xx: 
             raise ValueError(f"hgvs should always have a result: {comparison}")
             #self._logger.error(f"hgvs should always have a result: {comparison}")
             
@@ -89,6 +96,7 @@ class JoinAndCompare(object):
             c_dot_are_different = hgvs_row['hu.c_dot'].item() != annovar_row['annovar.c_dot'].item()
             p_dot_are_different = hgvs_row['hu.p_dot1'].item() != annovar_row['annovar.p_dot1'].item()
             exon_are_different = hgvs_row['hu.exon'].item() != annovar_row['annovar.exon'].item()
+                        
             difference_count = c_dot_are_different + p_dot_are_different + exon_are_different
             comparison['differences'] = difference_count
             
@@ -102,7 +110,24 @@ class JoinAndCompare(object):
         
         # Perform outter join on variant+transcript fields 
         merged_df = reduce(lambda left, right: pd.merge(left, right, on=join_cols, how='outer'), dataframes)
-        merged_df.to_csv(out_file, index=False, encoding='utf-8')
+        
+        # There are a lot of fields in the dataframe. Move the important ones up front 
+        front_columns = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript', 
+                         'hu.exon', 'annovar.exon', 
+                         'hu.c_dot', 'annovar.c_dot', 
+                         'hu.p_dot1', 'annovar.p_dot1',
+                         'differences']
+        
+        other_columns = [c for c in merged_df.columns if c not in front_columns]
+        
+        ordered_df = merged_df[front_columns + other_columns]
+        
+        sorted_df = ordered_df.sort_values(by=['differences','annovar.p_dot1', 'chromosome', 'position', 'reference', 'alt', 'cdna_transcript'], 
+                                           ascending=[True, True, True, True, True, True, True])
+        
+        sorted_df.to_csv(out_file, index=False, encoding='utf-8')
+        
+        
         self._logger.info(f"Wrote data frame with {merged_df.shape[0]} rows and {merged_df.shape[1]} columns  to {out_file}")
         
 def _parse_args():

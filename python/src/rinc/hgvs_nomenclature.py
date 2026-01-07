@@ -16,6 +16,7 @@ from rinc.util import chromosome_map
 from rinc.variant_transcript import VariantTranscript
 from hgvs.transcriptmapper import TranscriptMapper
 from rinc.util.log_config import LogConfig
+from hgvs.exceptions import HGVSDataNotAvailableError
 
 ASSEMBLY_VERSION = "GRCh37"
 
@@ -81,6 +82,8 @@ class HgvsNomenclature(object):
         try:
             for var in variants:
                 try:
+                    var.notes.append("source=hgvs/uta")
+                    
                     chromosome_map.get_refseq(var.chromosome)
                     # The g. is easy since we know it is a substitution
                     var_g = hp.parse_hgvs_variant(f"{chromosome_map.get_refseq(var.chromosome)}:g.{var.position}{var.reference}>{var.alt}")
@@ -102,7 +105,9 @@ class HgvsNomenclature(object):
                     
                     tx_info = hdp.get_tx_info(var_c.ac, chromosome_map.get_refseq(var.chromosome), 'splign')
                     var.gene = tx_info['hgnc']
-                    
+                except HGVSDataNotAvailableError as e:
+                    self._logger.warning(f"Unable to parse {var}, but it's ok, this happens when sequence not found in local SeqRepo: {e}")
+                    var.notes.append("Encountered HGVSDataNotAvailableError")
                 except Exception as e:
                     self._logger.error(f"Error processing variant {var}: {e}")
                     raise

@@ -5,12 +5,14 @@ class VariantTranscript:
         self.reference = reference
         self.alt = alt
 
+        self.g_dot = None
+        
         self.exon = None
         self.gene = None
         self.c_dot = None
         self.p_dot1 = None
-        self.p_dot2 = None
-
+        self.p_dot3 = None
+        
         self.cdna_transcript = cdna_transcript
         self.protein_transcript = None
 

@@ -59,20 +59,21 @@ class AnnovarMultianno(object):
         """
         if gene_detail_field == '.':
             return None, None
-        
+                
         try:
             for gene_detail in gene_detail_field.split(';'):
-                if 'exon' in gene_detail:            
-                    gene_transcript, exon, c_dot = gene_detail.split(':')
-                elif gene_detail.startswith('dist='):
-                    # dist=nnn means intergenic. We skipt these in tfx. 
-                    return None, None
-                else:
-                    exon = None
-                    gene_transcript, c_dot = gene_detail.split(':')
-                    
-                if gene_transcript == transcript:
-                    return c_dot, exon 
+                for gene_transcript_detail in gene_detail.split(","):
+                    if 'exon' in gene_transcript_detail:            
+                        gene_transcript, exon, c_dot = gene_transcript_detail.split(':')
+                    elif gene_transcript_detail.startswith('dist='):
+                        # dist=nnn means intergenic. We skipt these in tfx. 
+                        return None, None
+                    else:
+                        exon = None
+                        gene_transcript, c_dot = gene_transcript_detail.split(':')
+                        
+                    if gene_transcript == transcript:
+                        return c_dot, exon 
         except ValueError:
             self._logger.warning(f"Could not parse GeneDetail.refGeneWithVer field for {transcript}: {gene_detail_field}")            
             raise
@@ -133,8 +134,20 @@ class AnnovarMultianno(object):
         # p.
         variant_transcript.p_dot1 = aa_p_dot
 
+        # 
+        variant_transcript.notes.append("source=annovar")
+        
         return variant_transcript
 
+    def _get_exon(self, exon: str):
+        """
+        Convert annovar's exon string like "exon1" to just "1"
+        """
+        if exon:
+            return exon.replace('exon', '')
+        else:
+            return exon
+        
         
     def write(self, out_filename, variant_transcripts: list[VariantTranscript]):
         headers = ['chromosome', 'position', 'reference', 'alt',
@@ -150,7 +163,7 @@ class AnnovarMultianno(object):
             for v in variant_transcripts:
                 writer.writerow([v.chromosome, v.position, v.reference, v.alt, 
                                  v.cdna_transcript, 
-                                 v.exon, v.gene, v.genomic_region_type, v.protein_variant_type,
+                                 self._get_exon(v.exon), v.gene, v.genomic_region_type, v.protein_variant_type,
                                  v.c_dot, v.p_dot1, 
                                  ";".join(v.notes)])
             
