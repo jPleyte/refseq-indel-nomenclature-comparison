@@ -14,6 +14,7 @@ from rinc.util import chromosome_map
 import csv
 from rinc.util.uta_db import UtaDb
 from rinc.util.log_config import LogConfig
+from collections import Counter
 
 class FindGapVariants(object):
     '''
@@ -48,27 +49,33 @@ class FindGapVariants(object):
                                   'NC_000021.8',  'NC_000022.10', 'NC_000023.10', 'NC_000024.9'
                               ) 
                    AND cigar ~ '{cigar_regex}'
+                  LIMIT 100;
                 """
-        #                  LIMIT 1000;
+                          
         with UtaDb() as uta_db:
             transcript_gaps = uta_db.query(sql)
             self._logger.debug(f"Found {len(transcript_gaps)} transcript gaps")
             return transcript_gaps
         
-    def _get_gap_coordinate(self, cigar: str, exon_start):
+    def _get_gap_coordinate(self, strand: int, cigar: str, exon_start: int, exon_end: int):
         """
         Use the exon start position and the cigar string to to find the genomic coordinate of the insertion or deletion  
         """
         # Split CIGAR (eg 641=1I425=) into components like [('641', '='), ('2', 'I'), ...]
         ops = re.findall(r'(\d+)([ID=])', cigar)
-        current_genomic_location = exon_start
+        
+        assert strand == -1 or strand == 1, f"Strand must be -1 or 1 {strand}"
+        assert exon_start < exon_end, f"Exon start is after exon end: {exon_start}, {exon_end}"
+        
+        # Transcripts on positive strand start at 
+        genomic_position = exon_start if strand == 1 else exon_end
         
         for length, op in ops:
             if op == '=':
-                current_genomic_location += int(length)
+                genomic_position += int(length) * strand
             elif op in 'ID':
                 # We found the first Indel
-                return current_genomic_location, op
+                return genomic_position, op
             else:
                 raise ValueError("Should not happen a")
         
@@ -81,13 +88,17 @@ class FindGapVariants(object):
         Go 5 bases downstream, and if we're still on the exon keep the coordinate. 
         Return lis of these gaps.
         """
+        find_gap_counter = Counter()
+        
         gaps = []
         for t in self._get_transcript_gaps():
             exon_start = t['alt_start_i']
             exon_end = t['alt_end_i']
             strand = t['alt_strand']
             
-            gap_coord, gap_type = self._get_gap_coordinate(t['cigar'], exon_start)
+            gap_coord, gap_type = self._get_gap_coordinate(int(strand), t['cigar'], exon_start, exon_end)
+            
+            # jdebug: do we also need to deal with deletions or insertions somehow? 
             
             # Figure out the coordinate that is five bases downstream
             step = 5 if strand == 1 else -5
@@ -98,7 +109,11 @@ class FindGapVariants(object):
                 t['five_bases_downstream'] = five_bases_downstream
                 t['gap_type'] = 'deletion' if gap_type == 'D' else 'insertion'  
                 gaps.append(t)
+                find_gap_counter['downstream_position_found'] += 1
+            else: 
+                find_gap_counter['downstream_beyond_exon'] += 1
 
+        self._logger.info(f"Downstream position results: {find_gap_counter}")
         return gaps
 
     def _get_variant_transcript(self, gap, chromosome, position, reference, alt):

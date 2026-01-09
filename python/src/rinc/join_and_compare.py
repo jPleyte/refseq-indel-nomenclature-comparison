@@ -113,7 +113,7 @@ class JoinAndCompare(object):
         
         # There are a lot of fields in the dataframe. Move the important ones up front 
         front_columns = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript', 
-                         'hu.exon', 'annovar.exon', 
+                         'hu.exon', 'hu.correct_exon', 'annovar.exon', 
                          'hu.c_dot', 'annovar.c_dot', 
                          'hu.p_dot1', 'annovar.p_dot1',
                          'differences']

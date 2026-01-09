@@ -22,6 +22,8 @@ class VariantTranscript:
         self.genomic_region_type = None
         self.protein_variant_type = None
         
+        # jdebug
+        self.correct_hgvs_exon = None
 
     def __str__(self):
         return f"{self.chromosome}-{self.position}-{self.reference}-{self.alt} {self.cdna_transcript}:{self.c_dot}"
