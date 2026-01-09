@@ -20,4 +20,9 @@ process findGapVariants {
            --fasta ${fasta} \
            --out gaps_and_variants.csv
     """
+
+    stub:
+    """
+    cp /tmp/curated_gaps_and_variants.csv gaps_and_variants.csv
+    """
 }
