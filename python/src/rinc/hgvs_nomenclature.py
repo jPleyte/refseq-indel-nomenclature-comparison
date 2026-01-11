@@ -108,13 +108,14 @@ class HgvsNomenclature(object):
                         var.notes.append(note)
                     
                     # jDebug: determine exon the way tfx does it
-                    var.correct_hgvs_exon = self.get_exon_another_way(hdp, var)
+                    var.additional_fields['hu.tfx_exon'] = self.get_exon_another_way(hdp, var) 
 
                     tx_info = hdp.get_tx_info(var_c.ac, chromosome_map.get_refseq(var.chromosome), 'splign')
                     var.gene = tx_info['hgnc']
                 except HGVSDataNotAvailableError as e:
                     self._logger.warning(f"Unable to parse {var}, but it's ok, this happens when sequence not found in local SeqRepo: {e}")
                     var.notes.append("Encountered HGVSDataNotAvailableError")
+                    var.additional_fields['hu.tfx_exon'] = None
                 except Exception as e:
                     self._logger.error(f"Error processing variant {var}: {e}")
                     raise
@@ -123,7 +124,7 @@ class HgvsNomenclature(object):
             
     def get_exon_another_way(self, hdp, variant: VariantTranscript):
         """
-        JDebug determine the exon number 
+        JDebug determine the exon number using the tfx method
         """
         exons = hdp.get_tx_exons(variant.cdna_transcript,
                                  chromosome_map.get_refseq(variant.chromosome),
@@ -219,7 +220,7 @@ class HgvsNomenclature(object):
     def write(self, out_filename, variant_transcripts: list[VariantTranscript]):
         headers = ['chromosome', 'position', 'reference', 'alt',
                    'cdna_transcript', 'hu.protein_transcript', 
-                   'hu.exon', 'hu.correct_exon', 'hu.strand', 'hu.gene', 
+                   'hu.exon', 'hu.tfx_exon', 'hu.strand', 'hu.gene', 
                    'hu.g_dot', 'hu.c_dot', 'hu.p_dot1', 'hu.p_dot3', 
                    'hu.note']
         
@@ -230,7 +231,7 @@ class HgvsNomenclature(object):
             for v in variant_transcripts:
                 writer.writerow([v.chromosome, v.position, v.reference, v.alt, 
                                  v.cdna_transcript, v.protein_transcript, 
-                                 v.exon, v.correct_hgvs_exon, 
+                                 v.exon, v.additional_fields['hu.tfx_exon'], 
                                  v.strand, v.gene,
                                  v.g_dot, v.c_dot, v.p_dot1, v.p_dot3,
                                  ";".join(v.notes)])

@@ -7,7 +7,7 @@ process csvToAvinput {
     publishDir "${params.outdir}", mode: 'symlink'
 
     input:
-    path csv_file
+    path variant_csv_file
     
     output:
     path "annovar.avinput", emit: annovar_avinput
@@ -15,7 +15,7 @@ process csvToAvinput {
     script:
     """
     python -m rinc.etl.csv_to_avinput \
-           --in ${csv_file} \
+           --in ${variant_csv_file} \
            --out annovar.avinput
     """
 }

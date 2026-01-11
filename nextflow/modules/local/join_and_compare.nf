@@ -10,9 +10,10 @@ process joinAndCompare {
     path gaps_and_variants
     path hgvs_nomenclature    
     path annovar_nomenclature    
+    path snpeff_nomenclature
     
     output:
-    path "gap_nomenclature_comparison.csv", emit: gap_nomenclature_comparison
+    path "gap_nomenclature_all_transcripts_all_fields.csv", emit: gap_nomenclature_all_transcripts_all_fields
 
     script:
     """
@@ -20,6 +21,7 @@ process joinAndCompare {
         --gap_variants ${gaps_and_variants} \
         --hgvs_nomenclature ${hgvs_nomenclature} \
         --annovar_nomenclature ${annovar_nomenclature} \
-        --out gap_nomenclature_comparison.csv
+        --snpeff_nomenclature ${snpeff_nomenclature} \
+        --out gap_nomenclature_all_transcripts_all_fields.csv
     """
 }

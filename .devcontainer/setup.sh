@@ -41,3 +41,12 @@ cleanup() {
     echo "Removed nextflow logs and results"
 }
 EOF
+
+# Untested: 
+# Download and install SnpEff
+# cd /tmp
+# wget https://snpeff-public.s3.amazonaws.com/versions/snpEff_latest_core.zip
+# unzip snpEff_latest_core.zip
+# mv snpEff "/workspaces/$(basename $CONTAINER_WORKSPACE_FOLDER)/
+# cd /workspaces/$(basename $CONTAINER_WORKSPACE_FOLDER)/
+# java -jar snpEff.jar download GRCh37.p13

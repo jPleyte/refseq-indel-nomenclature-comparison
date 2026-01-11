@@ -70,8 +70,7 @@ def _parse_args():
                 dest="output",
                 help='avinput file',
                 type=argparse.FileType('w'),
-                required=False,
-                default="annovar.avinput")
+                required=True)
 
     parser.add_argument('--version', action='version', version=VERSION)
 

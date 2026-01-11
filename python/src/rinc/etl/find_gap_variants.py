@@ -49,7 +49,7 @@ class FindGapVariants(object):
                                   'NC_000021.8',  'NC_000022.10', 'NC_000023.10', 'NC_000024.9'
                               ) 
                    AND cigar ~ '{cigar_regex}'
-                  LIMIT 100;
+                  LIMIT 500;
                 """
                           
         with UtaDb() as uta_db:
