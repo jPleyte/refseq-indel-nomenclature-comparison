@@ -211,7 +211,7 @@ annovar/humandb/
 /.pydevproject
 
 # Nextflow files
-data/
+data/Homo_sapiens_assembly*
 nextflow/work
 nextflow/results
 nextflow/.nextflow
