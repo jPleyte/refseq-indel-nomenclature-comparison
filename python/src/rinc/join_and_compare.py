@@ -48,11 +48,19 @@ class JoinAndCompare(object):
         Return the SnpEff nomenclature dataframe
         """
         annovar_df = pd.read_csv(snpeff_nomenclature_file, dtype={'snpeff.exon': str, 'comparison_score': int})
-        return annovar_df 
-        
-    def get_comparison_df(self, gaps_df: pd.DataFrame, hgvs_df: pd.DataFrame, annovar_df: pd.DataFrame, snpeff_df: pd.DataFrame):
+        return annovar_df
+    
+    def get_mutalizer_nomenclature(self, mutalizer_nomenclature_file) -> pd.DataFrame:
         """
-        Compare dataframes with eachother and return a dataframe with comparison features         
+        Return the Mutalizer nomenclature dataframe
+        """
+        mutalizer_df = pd.read_csv(mutalizer_nomenclature_file)
+        return mutalizer_df
+         
+        
+    def get_comparison_df(self, gaps_df: pd.DataFrame, hgvs_df: pd.DataFrame, annovar_df: pd.DataFrame, snpeff_df: pd.DataFrame, mutalizer_df: pd.DataFrame):
+        """
+        Compare dataframes with each other and return a dataframe with comparison score         
         """
         create_mask = lambda df, c, p, r, a, t: (
             (df['chromosome'] == c) & 
@@ -78,18 +86,22 @@ class JoinAndCompare(object):
             
             snpeff_row = snpeff_df[create_mask(snpeff_df, chromosome, position, reference, alt, cdna_transcript)]
 
+            mutalyzer_row = mutalizer_df[create_mask(mutalizer_df, chromosome, position, reference, alt, cdna_transcript)]
+            
             if hgvs_row.shape[0] > 1:
                 raise ValueError(f"hgvs nomenclature has multiple rows for: {chromosome, position, reference, alt, cdna_transcript}")
             elif annovar_row.shape[0] > 1: 
                 raise ValueError(f"annovar nomenclature has multiple rows for: {chromosome, position, reference, alt, cdna_transcript}")
             elif snpeff_row.shape[0] > 1:
                 raise ValueError(f"snpeff nomenclature has multiple rows for: {chromosome, position, reference, alt, cdna_transcript}")
+            elif mutalyzer_row.shape[0] > 1:
+                raise ValueError(f"mutalizer nomenclature has multiple rows for: {chromosome, position, reference, alt, cdna_transcript}")
             
-            comparisons.append(self._get_comparison(chromosome, position, reference, alt, cdna_transcript, hgvs_row, annovar_row, snpeff_row))
+            comparisons.append(self._get_comparison(chromosome, position, reference, alt, cdna_transcript, hgvs_row, annovar_row, snpeff_row, mutalyzer_row))
         
         return pd.DataFrame(comparisons).astype({'comparison_score': float})
 
-    def _get_comparison(self, chromosome, position, reference, alt, cdna_transcript, hgvs_row: pd.DataFrame, annovar_row: pd.DataFrame, snpeff_row: pd.DataFrame):
+    def _get_comparison(self, chromosome, position, reference, alt, cdna_transcript, hgvs_row: pd.DataFrame, annovar_row: pd.DataFrame, snpeff_row: pd.DataFrame, mutalyzer_row: pd.DataFrame):
         """
         Calculate pairwis comparison score for c., p., and exon from all THREE sources (hgvs, annovar, snpeff).
         """
@@ -108,6 +120,8 @@ class JoinAndCompare(object):
             c_dot_values.append(annovar_row['annovar.c_dot'].item())
         if not snpeff_row.empty:
             c_dot_values.append(snpeff_row['snpeff.c_dot'].item())
+        if not mutalyzer_row.empty:
+            c_dot_values.append(mutalyzer_row['mut.c_dot'].item())
              
         # p. values for comparison
         p_dot_values = [ hgvs_row['hu.p_dot1'].item() ]
@@ -115,6 +129,8 @@ class JoinAndCompare(object):
             p_dot_values.append(annovar_row['annovar.p_dot1'].item())
         if not snpeff_row.empty:
             p_dot_values.append(snpeff_row['snpeff.p_dot1'].item())
+        if not mutalyzer_row.empty:
+            p_dot_values.append(mutalyzer_row['mut.p_dot1'].item())
              
         # exon vlaues for comparison
         exon_values = [ hgvs_row['hu.exon'].item() ]
@@ -166,11 +182,12 @@ class JoinAndCompare(object):
               hgvs_df: pd.DataFrame, 
               annovar_df: pd.DataFrame, 
               snpeff_df: pd.DataFrame, 
+              mutalizer_df: pd.DataFrame,
               comparison_df: pd.DataFrame):
         """
         Join all the dataframs on the variant+transcript fields and write out a csv with all fields.  
         """
-        dataframes = [gaps_df, hgvs_df, annovar_df, snpeff_df, comparison_df]
+        dataframes = [gaps_df, hgvs_df, annovar_df, snpeff_df, mutalizer_df, comparison_df]
         join_cols = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript']
         
         # Perform outter join on variant+transcript fields 
@@ -179,8 +196,8 @@ class JoinAndCompare(object):
         # There are a lot of fields in the dataframe. Move the important ones up front 
         front_columns = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript', 
                          'hu.exon', 'hu.tfx_exon', 'annovar.exon', 'snpeff.exon',
-                         'hu.c_dot', 'annovar.c_dot', 'snpeff.c_dot',
-                         'hu.p_dot1', 'annovar.p_dot1', 'snpeff.p_dot1',
+                         'hu.c_dot', 'annovar.c_dot', 'snpeff.c_dot', 'mut.c_dot',
+                         'hu.p_dot1', 'annovar.p_dot1', 'snpeff.p_dot1', 'mut.p_dot1',
                          'comparison_score']
         
         # Gather a list of all columsn other than the front_columns
@@ -202,6 +219,7 @@ def _parse_args():
     parser.add_argument('--hgvs_nomenclature', help='hgvs/uta values (csv)', required=True)
     parser.add_argument('--annovar_nomenclature', help='Annovar values (csv)', required=True)    
     parser.add_argument('--snpeff_nomenclature', help='SnpEff values (csv)', required=True)
+    parser.add_argument('--mutalizer_nomenclature', help='Mutalizer values (csv)', required=True)
 
     parser.add_argument("--out", help="output file (csv)", required=True)
 
@@ -224,14 +242,15 @@ def main():
     annovar_df = jc.get_annovar_nomenclature(args.annovar_nomenclature)
     
     snpeff_df = jc.get_snpeff_nomenclature(args.snpeff_nomenclature)
+    
+    mutalizer_df = jc.get_mutalizer_nomenclature(args.mutalizer_nomenclature)
 
     # Left join all datasets to the variant list 
-    comparison_df = jc.get_comparison_df(gaps_df, hgvs_df, annovar_df, snpeff_df)
+    comparison_df = jc.get_comparison_df(gaps_df, hgvs_df, annovar_df, snpeff_df, mutalizer_df)
 
     
-    jc.write(args.out, gaps_df, hgvs_df, annovar_df, snpeff_df, comparison_df)
+    jc.write(args.out, gaps_df, hgvs_df, annovar_df, snpeff_df, mutalizer_df, comparison_df)
     
 
 if __name__ == '__main__':
     main()
-        

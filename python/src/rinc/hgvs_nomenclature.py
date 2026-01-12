@@ -17,6 +17,7 @@ from rinc.variant_transcript import VariantTranscript
 from hgvs.transcriptmapper import TranscriptMapper
 from rinc.util.log_config import LogConfig
 from hgvs.exceptions import HGVSDataNotAvailableError
+from rinc.etl import find_gap_variants
 
 ASSEMBLY_VERSION = "GRCh37"
 
@@ -30,23 +31,6 @@ class HgvsNomenclature(object):
         '''
         self._logger = logging.getLogger(__name__)
     
-    def get_variants(self, variants_file: str):
-        """
-        Read the csv file that has the variants that will be processed. 
-        """
-        variants = [] 
-        with open(variants_file, mode='r') as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                variants.append(VariantTranscript(row['chromosome'], 
-                                                  int(row['position']),
-                                                  row['reference'], 
-                                                  row['alt'],
-                                                  row['cdna_transcript']))
-        
-        self._logger.debug(f"Read {len(variants)} variants from {variants_file}")
-        return variants
-
     def _get_exon(self, hdp: hgvs.dataproviders.uta.UTA_postgresql, var_c: hgvs.sequencevariant.SequenceVariant, refseq_chromosome: str) -> int:
         """
         Return exon for a transcript position
@@ -89,15 +73,15 @@ class HgvsNomenclature(object):
                     var.notes.append("source=hgvs/uta")
                     
                     chromosome_map.get_refseq(var.chromosome)
-                    # The g. is easy since we know it is a substitution
-                    var_g = hp.parse_hgvs_variant(f"{chromosome_map.get_refseq(var.chromosome)}:g.{var.position}{var.reference}>{var.alt}")
+                    
+                    var_g =hp.parse_hgvs_variant(var.g_dot)
                     var_c = am.g_to_c(var_g, var.cdna_transcript)
                     var_p = am.c_to_p(var_c)
                     
+                    # Don't wrap p. in parenthesis
                     if var_p.posedit: 
                         var_p.posedit.uncertain = False
                     
-                    var.g_dot = var_g.format().replace(var_g.ac + ':', '')
                     var.c_dot = var_c.format().replace(var_c.ac + ':', '')
                     var.protein_transcript = var_p.ac
                     var.p_dot1 = var_p.format(conf={"p_3_letter": False}).replace(var_p.ac + ':', '')
@@ -255,7 +239,8 @@ def main():
     hn = HgvsNomenclature()
 
     # Read variants from csv 
-    variants = hn.get_variants(args.variants)
+    variants = find_gap_variants.get_variants(args.variants)
+    logging.debug(f"Read {len(variants)} variants from {args.variants}")
 
     # Update variants with c. and p. changes 
     hn.update_with_changes(variants)

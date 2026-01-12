@@ -9,6 +9,7 @@ include { convertAnnovarMultiannoToCsv } from './modules/local/convert_annovar_m
 include { csvToVcf } from './modules/local/csv_to_vcf.nf'
 include { runSnpEff } from './modules/local/run_snpeff.nf'
 include { convertSnpEffToCsv } from './modules/local/convert_snpeff_to_csv.nf'
+include { addMutalizerAnnoation } from './modules/local/add_mutalizer_annotation.nf'
 
 //include { csvToVep } from './modules/local/csv_to_vep.nf'
 //include { runVep } from './modules/local/run_vep.nf'
@@ -36,7 +37,7 @@ workflow {
     // Extract annovar nomenclature and write to new csv
     convertAnnovarMultiannoToCsv(runAnnovar.out.multianno)
     
-    // Convert variant list to vcf 
+    // Convert variant list to vcf to be used by SnpEff
     csvToVcf(findGapVariants.out.gaps_and_variants)
 
     // Run SnpEfff on vcf 
@@ -45,6 +46,8 @@ workflow {
     // Extract SnpEff nomenclature and write to new csv
     convertSnpEffToCsv(runSnpEff.out.snpeff_tsv)
 
+    addMutalizerAnnoation(findGapVariants.out.gaps_and_variants, params.mutilizer_cache)
+
     // Convert variant list to VEP input file
     // csvToVep(findGapVariants.out.gaps_and_variants)
 
@@ -52,5 +55,6 @@ workflow {
     joinAndCompare(findGapVariants.out.gaps_and_variants, 
                    hgvsNomenclature.out.hgvs_nomenclature,
                    convertAnnovarMultiannoToCsv.out.annovar_nomenclature,
-                   convertSnpEffToCsv.out.snpeff_nomenclature)
+                   convertSnpEffToCsv.out.snpeff_nomenclature,
+                   addMutalizerAnnoation.out.mutalizer_nomenclature)
 }

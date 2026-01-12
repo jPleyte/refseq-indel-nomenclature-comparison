@@ -9,9 +9,8 @@ import logging
 
 class PDot(object):
     '''
-    classdocs
+    Convert protein changes between one and three letter 
     '''
-
 
     def __init__(self):
         '''

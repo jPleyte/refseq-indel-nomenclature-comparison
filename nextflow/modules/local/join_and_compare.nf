@@ -11,6 +11,7 @@ process joinAndCompare {
     path hgvs_nomenclature    
     path annovar_nomenclature    
     path snpeff_nomenclature
+    path mutalizer_nomenclature
     
     output:
     path "gap_nomenclature_all_transcripts_all_fields.csv", emit: gap_nomenclature_all_transcripts_all_fields
@@ -22,6 +23,7 @@ process joinAndCompare {
         --hgvs_nomenclature ${hgvs_nomenclature} \
         --annovar_nomenclature ${annovar_nomenclature} \
         --snpeff_nomenclature ${snpeff_nomenclature} \
+        --mutalizer_nomenclature ${mutalizer_nomenclature} \
         --out gap_nomenclature_all_transcripts_all_fields.csv
     """
 }

@@ -9,24 +9,43 @@ import logging.config
 import argparse
 
 import re
-import pysam
 from rinc.util import chromosome_map
 import csv
 from rinc.util.uta_db import UtaDb
 from rinc.util.log_config import LogConfig
 from collections import Counter
+from rinc.util.tx_eff_pysam import PysamTxEff
+from rinc.util.vcf_to_gdot import get_gdot
+from rinc.variant_transcript import VariantTranscript
+
+def get_variants(variants_file: str):
+    """
+    Read the csv file that has the variants that will be processed. 
+    """
+    variants = [] 
+    with open(variants_file, mode='r') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            variants.append(VariantTranscript(row['chromosome'], 
+                                              int(row['position']),
+                                              row['reference'], 
+                                              row['alt'],
+                                              row['cdna_transcript'], 
+                                              g_dot=row['g_dot']))
+    return variants
 
 class FindGapVariants(object):
     '''
     Query the UTA database to find insertion or deletion alignment differences between hg19 and RefSeq transcript sequences 
     '''
 
-    def __init__(self, uta_schema):
+    def __init__(self, uta_schema, fasta_file):
         '''
         Constructor
         '''
         self._logger = logging.getLogger(__name__)
         self._uta_schema = uta_schema
+        self._pysam_tx = PysamTxEff(fasta_file)
     
     def _get_transcript_gaps(self):
         """
@@ -116,10 +135,10 @@ class FindGapVariants(object):
         self._logger.info(f"Downstream position results: {find_gap_counter}")
         return gaps
 
-    def _get_variant_transcript(self, gap, chromosome, position, reference, alt):
+    def _get_row_details(self, gap, chromosome, position, reference, alt):
         """
         Create a VariantTranscript object from the query result row 
-        """
+        """        
         variant_transcript = {
                               'chromosome': chromosome,
                               'position': position,
@@ -132,33 +151,42 @@ class FindGapVariants(object):
                               'alt_end_i': gap['alt_end_i'],
                               'ord': gap['ord'],
                               'alt_ac': gap['alt_ac'],
-                              'symbol': gap['symbol']                              
+                              'symbol': gap['symbol'],      
+                              'g_dot': self._get_g_dot(chromosome, position, reference, alt)
                               }
         
         return variant_transcript
         
-    def get_variants(self, gaps: list[dict], fasta_file):
+    def _get_g_dot(self, chromosome, position, reference, alt):
+        """
+        Return the variant using g. nomenclature 
+        """
+        gdot = get_gdot(chromosome, position, reference, alt, self._pysam_tx)
+        refseq_chromosome = chromosome_map.get_refseq(chromosome)
+        return refseq_chromosome + ':g.' + gdot
+    
+        
+    def get_variants(self, gaps: list[dict]):
         """
         """
-        fasta = pysam.FastaFile(fasta_file)
         variant_transcripts = []
         
         for row in gaps:
             chromosome = chromosome_map.get_ncbi(row['alt_ac'])
             
             # subtract one because pysam uses zero-based positions
-            reference_base = fasta.fetch(reference=chromosome, start=row['five_bases_downstream']-1, end=row['five_bases_downstream'])
+            reference_base = self._pysam_tx.direct_query(chromosome, row['five_bases_downstream']-1, row['five_bases_downstream'])
             
             arbitrary_different_base = { 'A': 'G', 'T': 'C', 'G': 'T', 'C': 'A' }
             
             if reference_base == 'N':
-                self._logger.info(f"Invalid variant having base 'N': {chromosome} {row['alt_ac']} {row['five_bases_downstream']}")
+                self._logger.debug(f"Invalid variant having base 'N': {chromosome} {row['alt_ac']} {row['five_bases_downstream']}")
                 continue
-            variant_transcripts.append(self._get_variant_transcript(row, 
-                                                                    chromosome, 
-                                                                    row['five_bases_downstream'], 
-                                                                    reference_base, 
-                                                                    arbitrary_different_base[reference_base]))
+            variant_transcripts.append(self._get_row_details(row, 
+                                                             chromosome, 
+                                                             row['five_bases_downstream'], 
+                                                             reference_base, 
+                                                             arbitrary_different_base[reference_base]))
 
         return variant_transcripts
     
@@ -188,9 +216,9 @@ def main():
     
     args = _parse_args()
     
-    fgv = FindGapVariants(args.uta_schema)
+    fgv = FindGapVariants(args.uta_schema, args.fasta)
     gaps = fgv.find_gaps()
-    variants = fgv.get_variants(gaps, args.fasta)
+    variants = fgv.get_variants(gaps)
     fgv.write(args.out, variants)
     
 if __name__ == '__main__':
