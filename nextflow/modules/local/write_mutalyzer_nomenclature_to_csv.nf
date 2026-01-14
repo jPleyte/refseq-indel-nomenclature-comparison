@@ -1,26 +1,26 @@
 #!/usr/bin/env nextflow
 
 /*
- * Instead of installing Mutilizer locally or spending loads of time performing api requests, mutliizer annoations
+ * Instead of installing Mutalyzer locally or spending loads of time performing api requests, mutliizer annoations
  * are stored in a local csv file before the workflow is launched. This process looks up each transcript in the local 
  * db and writes out a csv with the ones it finds.   
  */
 
- process addMutalizerAnnoation {
+ process writeMutalyzerNomenclatureToCsv {
      publishDir "${params.outdir}", mode: 'symlink'
  
      input:
      path variants_csv
-     path mutilizer_cache
+     path mutalyzer_cache
  
      output:
-     path "mutalizer_nomenclature.csv", emit: mutalizer_nomenclature
+     path "mutalyzer_nomenclature.csv", emit: mutalyzer_nomenclature
  
      script:
      """
      python -m rinc.mutalyzer.mutalyzer_nomenclature \
          --variants ${variants_csv} \
-         --mutalyzer_cache ${mutilizer_cache} \
-         --out mutalizer_nomenclature.csv
+         --mutalyzer_cache ${mutalyzer_cache} \
+         --out mutalyzer_nomenclature.csv
      """
  }

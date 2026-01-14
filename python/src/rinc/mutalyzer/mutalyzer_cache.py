@@ -1,5 +1,9 @@
 '''
-Saved results from Mutalyzer's Batch Processor (https://mutalyzer.nl/batchprocessor)
+This module has the MytalyzerCache class which is a database of results 
+received from Mutalyzer's Batch Processor (https://mutalyzer.nl/batchprocessor).
+The main method is used to import batch files into the database file which is a csv
+maintained in the git repository.
+   
 Created on Jan 11, 2026
 
 @author: pleyte
@@ -37,7 +41,7 @@ class MutilzizerResult():
 
 class MytalyzerCache(object):
     '''
-    A local database of Mutilizer results
+    A local database of mutalyzer results
     '''
     def __init__(self, cache_db_file):
         '''
@@ -100,11 +104,12 @@ class MytalyzerCache(object):
         """
         Return the database key constructed from the given fields
         """
+        transcript = "noTranscript" if refseq_cdna_transcript is None else refseq_cdna_transcript  
         assert refseq_chromosome.startswith("NC")
         assert g_dot.startswith("g."), f"Expecting g. that starts with g. but got {g_dot}"
-        assert refseq_cdna_transcript == 'noTranscript' or refseq_cdna_transcript.startswith("NM") 
+        assert transcript == 'noTranscript' or refseq_cdna_transcript.startswith("NM") 
                 
-        return f"{refseq_chromosome}-{g_dot}-{refseq_cdna_transcript}"
+        return f"{refseq_chromosome}-{g_dot}-{transcript}"
     
     def _are_equal(self, a:MutilzizerResult, b: MutilzizerResult):
         if not a or not b:
@@ -128,12 +133,17 @@ class MytalyzerCache(object):
         
     def import_results(self, batch_result_file):
         """
-        Read the csv containing Mutilizer results 
+        Read the csv containing mutalyzer results 
         """
         count = Counter()
         with open(batch_result_file, mode='r') as file:
             reader = csv.DictReader(file, delimiter='\t')
             for row in reader:
+                if row['Status'] == "Failed":
+                    print(f"Encountered failed variant: {row['Input description']}")
+                    count['failed'] += 1
+                    continue
+                
                 mr = self._read_row(row)
 
                 db_key = self._get_db_key_mr(mr)
@@ -195,7 +205,10 @@ class MytalyzerCache(object):
         normalized string should look like "NC_000012.11:g.9994422G>A" 
         """
         assert normalized, "Normalized value must not be empty"
-        ref_chr, g_dot = normalized.split(':')
+        try:
+            ref_chr, g_dot = normalized.split(':')
+        except ValueError as e:
+            print(e)
         
         assert ref_chr.startswith("NC_"), "Refseq chromosome must start with NC"
         assert g_dot.startswith("g."), "g. must start with g."
@@ -254,10 +267,10 @@ class MytalyzerCache(object):
 
 
 def _parse_args():
-    parser = argparse.ArgumentParser(description='Import Mutilizer Batch Processor results into the local cache')
+    parser = argparse.ArgumentParser(description='Import mutalyzer Batch Processor results into the local cache')
     parser.add_argument("--version", action="version", version="0.0.1")    
-    parser.add_argument("--batch_file", help="Mutilizer Batch Processor results to import (csv)", required=True)
-    parser.add_argument("--mutilizer_cache", help="Local Mutilizer cache where (csv)", required=True)
+    parser.add_argument("--batch_file", help="mutalyzer Batch Processor results to import (csv)", required=True)
+    parser.add_argument("--mutalyzer_cache", help="Local mutalyzer cache where (csv)", required=True)
     
     args = parser.parse_args()
     return args    
@@ -267,7 +280,7 @@ def main():
 
     args = _parse_args()
     
-    mc = MytalyzerCache(args.mutilizer_cache)
+    mc = MytalyzerCache(args.mutalyzer_cache)
     mc.import_results(args.batch_file)
     mc.save_db()
     

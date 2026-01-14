@@ -62,7 +62,7 @@ class ProcessSnpeff(object):
     
     def _get_genomic_region_type(self, snpeff_effect: str):
         """
-        Convert SnpEff EFFECT to "exon", "intron", etc
+        Convert SnpEff EFFECT to "exon", "intron", "intergenic", or "utr"
         Full list of EFFECT values: https://pcingola.github.io/SnpEff/snpeff/inputoutput/#eff-field-vcf-output-files        
         """
         effect = snpeff_effect.lower()
@@ -99,7 +99,7 @@ class ProcessSnpeff(object):
             for v in variant_transcripts:
                 writer.writerow([v.chromosome, v.position, v.reference, v.alt, 
                                  v.cdna_transcript, 
-                                 v.exon, v.gene, v.genomic_region_type, 
+                                 v.exon, v.gene, v.genomic_region_type,  
                                  v.c_dot, v.p_dot1, v.p_dot3, 
                                  v.additional_fields['ann_effect_raw'], 
                                  v.additional_fields['ann_biotype_raw']])

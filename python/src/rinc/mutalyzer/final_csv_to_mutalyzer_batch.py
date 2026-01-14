@@ -25,26 +25,26 @@ from rinc.util import chromosome_map
 
 class FinalCsvToMutalyzerBatch(object):
     '''
-    Utility class for extracting variants from the the gap-variant csv and writing out a list of g. variants that can be submitted to Mutilizer's Batch Processor  
+    Utility class for extracting variants from the the gap-variant csv and writing out a list of g. variants that can be submitted to Mutalyzer's Batch Processor  
     '''
 
-    def __init__(self, mutalizer_cache_file=None):
+    def __init__(self, mutalyzer_cache_file=None):
         '''
         Constructor
         '''
         self._logger = logging.getLogger(__name__)
-        self._mutalyzer_cache = self._load_mutalizer_cache(mutalizer_cache_file)
-        self._count = Counter()
+        self._mutalyzer_cache = self._load_mutalyzer_cache(mutalyzer_cache_file)
+        self._criteria_counter = Counter()
         
-    def _load_mutalizer_cache(self, mutalizer_cache_file: str):
+    def _load_mutalyzer_cache(self, mutalyzer_cache_file: str):
         """
         Load the Mutalyzer cache. This is optional. It allows us to check the local cache for results before 
         adding them to the batch so we don't request annotation for variants we've already requested. 
         """
-        if not mutalizer_cache_file:
+        if not mutalyzer_cache_file:
             return None
         
-        return MytalyzerCache(mutalizer_cache_file)
+        return MytalyzerCache(mutalyzer_cache_file)
     
     def _is_result_already_known(self, row: dict) -> bool:
         """
@@ -61,8 +61,14 @@ class FinalCsvToMutalyzerBatch(object):
         
         refseq_cdna_transcript = row['cdna_transcript']
         assert refseq_cdna_transcript, f"cnda transcript is blank for {row['chromosome']}-{row['position']}-{row['reference']}-{row['alt']}"
-        
+            
+        # Check the db for this variant and transcript. The first serach uses the transcript. 
+        # But If mutalyzer doesn't have any info for this variant then it will  return an empty result which is stored in the local db without a transcript so
+        # a second search is performed without the transcript.   
         if self._mutalyzer_cache.find(refseq_chromosome_a, g_dot, refseq_cdna_transcript):
+            return True
+        elif self._mutalyzer_cache.find(refseq_chromosome_a, g_dot, None):
+            
             return True
         else:
             return False
@@ -77,37 +83,59 @@ class FinalCsvToMutalyzerBatch(object):
         
         if row['hu.c_dot'] and row['annovar.c_dot'] and self._is_result_already_known(row):
             self._logger.debug(f"Skipping already known {row['chromosome']}-{row['position']}-{row['reference']}-{row['alt']}-{row['cdna_transcript']}")
-            self._count['already_cached'] += 1
+            self._criteria_counter['already_cached'] += 1
             return False
         elif row['hu.c_dot'] and row['annovar.c_dot']:
             self._logger.debug(f"Keeping {row['chromosome']}-{row['position']}-{row['reference']}-{row['alt']}-{row['cdna_transcript']} with {row['hu.c_dot']} and {row['annovar.c_dot']}")
-            self._count['kept'] += 1
+            self._criteria_counter['kept'] += 1
             return True         
         else:
             self._logger.debug(f"Skipping {row['chromosome']}-{row['position']}-{row['reference']}-{row['alt']}-{row['cdna_transcript']} with {row['hu.c_dot']} and {row['annovar.c_dot']}")
-            self._count['skipped'] += 1
+            self._criteria_counter['lacking_sufficient_c_dot'] += 1
             return False
         
     def get_variants(self, variants_file: str):
         """
         Read the csv file that has the variants that will be processed. 
         """
-        variants = [] 
+        result_counter = Counter()
+        variants_to_request = set()
+        
         with open(variants_file, mode='r') as file:
             reader = csv.DictReader(file)
             for row in reader:
-                if self._meets_criteria(row):
-                    variants.append(VariantTranscript(row['chromosome'], 
-                                                      int(row['position']),
-                                                      row['reference'], 
-                                                      row['alt'],
-                                                      row['cdna_transcript'], 
-                                                      g_dot=row['g_dot']))
+                result_counter['total'] += 1
+                if row['position'] == '46694318' and row['reference'] == 'A' and row['alt'] == 'G':
+                    print("jDebug")
+                    
+                if self._meets_criteria(row):                    
+                    variant_string = self._get_mutalyzer_batch_variant(VariantTranscript(row['chromosome'], 
+                                                                                         int(row['position']),
+                                                                                         row['reference'], 
+                                                                                         row['alt'],
+                                                                                         row['cdna_transcript'], 
+                                                                                         g_dot=row['g_dot']))
+                    if variant_string in variants_to_request:
+                        result_counter['duplicate'] += 1
+                    else:
+                        result_counter['unique'] += 1
+                        variants_to_request.add(variant_string)
+                
+                
+        self._logger.info(f"Read {result_counter['total']} variants from {variants_file}")
+        self._logger.info(f"Criteria: {self._criteria_counter}")
+        self._logger.info(f"Kept {result_counter['unique']}, discarded {result_counter['duplicate']} duplicates")
         
-        self._logger.debug(f"Read {len(variants)} variants from {variants_file}")
-        self._logger.info(f"Counted {self._count}")
-        return variants
+        
+        return list(variants_to_request)
     
+    def _get_mutalyzer_batch_variant(self, v: VariantTranscript) -> str:
+        """
+        Conver the VariantTranscript to the g. string that will be put in the batch file
+        """
+        refseq_chromosome, g_dot_only = v.g_dot.split(':')
+        return f"{refseq_chromosome}:{g_dot_only}"
+        
     def write_transcripts(self, out_directory, variants: list[VariantTranscript], batch_size=50):
         """
         Write variant transcripts out to batch files in the out_directory. Each file will have max batch_size lines
@@ -124,18 +152,16 @@ class FinalCsvToMutalyzerBatch(object):
             
             with open(full_path, "w") as f:
                 for v in batch:
-                    # f.write(f"{v.g_dot}\t{v.cdna_transcript}\n")
-                    refseq_chromosome, g_dot_only = v.g_dot.split(':')
-                    f.write(f"{refseq_chromosome}:{g_dot_only}\n")
+                    f.write(f"{v}\n")
                 
                 self._logger.info(f"Wrote {len(batch)} variant transcripts to {full_path}")
         
 
 def _parse_args():
-    parser = argparse.ArgumentParser(description='Read a list of variants and write them out in format suitable for submission to Mutilizer''s Batch Processor')
+    parser = argparse.ArgumentParser(description='Read a list of variants and write them out in format suitable for submission to Mutalyzer''s Batch Processor')
 
     parser.add_argument('--variant_nomenclature', help='Variant nomenclature generated by workflow (csv)', required=True)
-    parser.add_argument('--mutalizer_cache', help="Local Mutalyzer cache (csv)", required=False)
+    parser.add_argument('--mutalyzer_cache', help="Local Mutalyzer cache (csv)", required=False)
     parser.add_argument('--out_dir', help='Directory to write batch files', required=True)
 
     parser.add_argument("--version", action="version", version="0.0.1")
@@ -152,16 +178,16 @@ def main():
     
     args = _parse_args()
     
-    f2b = FinalCsvToMutalyzerBatch(args.mutalizer_cache)
+    f2b = FinalCsvToMutalyzerBatch(args.mutalyzer_cache)
     
-    if args.mutalizer_cache:
+    if args.mutalyzer_cache:
         logging.info("Using local Mutalyzer to filter variants we've already submitted")
     else:
         logging.info("Local Mutalyzer cache not provided for additional filtering")
     
     # Read and filter variants
     variants = f2b.get_variants(args.variant_nomenclature)
-    
+        
     # Write variants to batch files to be submitted to Mutalyzer's Batch Processor 
     f2b.write_transcripts(args.out_dir, variants)
     

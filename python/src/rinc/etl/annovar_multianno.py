@@ -10,6 +10,7 @@ import csv
 import logging.config
 from rinc.util.log_config import LogConfig
 from rinc.variant_transcript import VariantTranscript
+import re
 
 class AnnovarMultianno(object):
     '''
@@ -96,6 +97,22 @@ class AnnovarMultianno(object):
         # No information in this field for the current transcript 
         return None, None, None, None
             
+    def _normalize(self, c_dot_raw) -> str:
+        """
+        Attempt to normalize annovar's c.
+        Supported formats are:
+        * Substitutions: c.C1307T --> c.1307C>T
+        
+        """        
+        substitution_pattern = r"c\.(?P<ref>[A-Z])(?P<pos>\d+)(?P<alt>[A-Z])"
+        match = re.search(substitution_pattern, c_dot_raw)
+        if match:
+            ref_base = match.group("ref")
+            position = int(match.group("pos"))
+            alt_base = match.group("alt")
+            return f"c.{position}{ref_base}>{alt_base}"
+        
+        return c_dot_raw
         
     def _get_parse_transcript(self, transcript: str, row: dict):
         """
@@ -115,8 +132,9 @@ class AnnovarMultianno(object):
         elif cdna_c_dot:
             variant_transcript.c_dot = cdna_c_dot
         elif aa_c_dot:
-            variant_transcript.c_dot = aa_c_dot
-            variant_transcript.notes.append("c. is from protein field")
+            variant_transcript.additional_fields['aa_c_dot_raw'] = aa_c_dot 
+            variant_transcript.c_dot = self._normalize(aa_c_dot)
+            variant_transcript.notes.append(f"c. is from protein field. See aa_c_dot_raw")
         
         # Exon
         if cdna_exon and aa_exon:

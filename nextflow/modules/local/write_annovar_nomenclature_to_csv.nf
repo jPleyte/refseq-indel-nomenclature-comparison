@@ -3,7 +3,7 @@
 /*
  * Convert csv variant list to annovar avinput format
  */
-process convertAnnovarMultiannoToCsv {
+process writeAnnovarNomenclatureToCsv {
     publishDir "${params.outdir}", mode: 'symlink'
 
     input:

@@ -3,7 +3,7 @@
 /*
  * Extract features from SnpEff's tsv and write to csv 
  */
-process convertSnpEffToCsv {
+process writeSnpEffNomenclatureToCsv {
     publishDir "${params.outdir}", mode: 'symlink'
 
     input:

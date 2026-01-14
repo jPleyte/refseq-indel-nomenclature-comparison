@@ -17,7 +17,7 @@ class VariantTranscript:
     protein_transcript: str = None
     strand: int = None
     
-    # exon, intron, 3' UTR, etc
+    # exon, intron, utr, or intergenic
     genomic_region_type: str = None
     
     # Synonymous, missense, start loss, stop gain, etc

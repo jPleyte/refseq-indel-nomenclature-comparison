@@ -3,7 +3,7 @@
 /*
  * Generate the c. and p. nomenclature using the hgvs python package 
  */
-process hgvsNomenclature {
+process writeHgvsNomenclatureToCsv {
     publishDir "${params.outdir}", mode: 'symlink'
 
     input:    

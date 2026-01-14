@@ -21,12 +21,12 @@ class MutalyzerNomenclature(object):
     '''
 
 
-    def __init__(self, mutilizer_cache_file):
+    def __init__(self, mutalyzer_cache_file):
         '''
         Constructor
         '''
         self._logger = logging.getLogger(__name__)
-        self._mutalyzer_cache = MytalyzerCache(mutilizer_cache_file)
+        self._mutalyzer_cache = MytalyzerCache(mutalyzer_cache_file)
         self._pDot = PDot()
     
     def get_annotated_variants(self, variant_transcripts: list[VariantTranscript]):
@@ -38,8 +38,10 @@ class MutalyzerNomenclature(object):
                 v.c_dot = mutalyzer_result.c_dot
                 v.g_dot = mutalyzer_result.g_dot
                 v.p_dot3 = mutalyzer_result.p_dot
-                v.p_dot1 = self._pDot.get_p_dot1(v.cdna_transcript, v.p_dot3)
                 v.protein_transcript = mutalyzer_result.protein_transcript
+                if v.p_dot3:
+                    v.p_dot1 = self._pDot.get_p_dot1(v.protein_transcript, v.p_dot3)
+
                 annotated_variants.append(v)
         
         self._logger.info(f"Found {len(annotated_variants)} of {len(variant_transcripts)} in Mutalyzer cache")
@@ -47,7 +49,7 @@ class MutalyzerNomenclature(object):
             
     def _get_result(self, variant: VariantTranscript) -> MutilzizerResult:
         """
-        Look for the variant transcript in the Mutilizer cache
+        Look for the variant transcript in the mutalyzer cache
         """
         assert variant.g_dot, f"g. is empty but shouldn't be for {variant}"
         refseq_chromosome, g_dot = variant.g_dot.split(':')
