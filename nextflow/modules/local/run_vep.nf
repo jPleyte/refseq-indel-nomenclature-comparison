@@ -23,15 +23,15 @@ process runVep {
     assert flag == "--use_transcript_ref" || flag == "--use_given_ref" : "Invalid VEP flag: $flag. Must be --use_transcript_ref or --use_given_ref"
 
     """
-    # Run once with --use_transcript_ref: VEP will use the sequence from the transcript record. 
     ${params.vep}                  \
+    --dir ${params.vep_dir}        \
+    --dir_cache ${params.vep_dir}  \
+    --fasta ${params.vep_fasta}    \
     ${flag}                        \
     --offline                      \
     --merged                       \
-    --dir_cache /Users/pleyte/.vep \
     --species homo_sapiens         \
     --assembly GRCh37              \
-    --fasta ${params.vep_fasta}    \
     --hgvs                         \
     --hgvsg                        \
     --symbol                       \
