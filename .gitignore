@@ -212,6 +212,8 @@ annovar/humandb/
 
 # Nextflow files
 data/Homo_sapiens_assembly*
+data/vep/*
+
 nextflow/work
 nextflow/results
 nextflow/.nextflow
