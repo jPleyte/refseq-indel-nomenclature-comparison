@@ -1,7 +1,8 @@
 #!/usr/bin/env nextflow
 
 // Import the processes from your modules folder
-include { findGapVariants } from './modules/local/find_gap_variants.nf'
+include { validateParameters; paramsSummaryLog } from 'plugin/nf-validation'
+include { findGapVariants } from './modules/local/variants/find_gap_variants.nf'
 include { writeHgvsNomenclatureToCsv} from './modules/local/write_hgvs_nomenclature_to_csv.nf'
 include { csvToAvinput } from './modules/local/csv_to_avinput.nf'
 include { runAnnovar } from './modules/local/run_annovar.nf'
@@ -23,20 +24,43 @@ workflow {
     main:
     uta_schema = channel.value(params.uta_schema)
     fasta_ch = channel.fromPath(params.fasta, checkIfExists: true)
-    
+
     def vep_sequence_modes = [
         refseq: "--use_transcript_ref",
         reference: "--use_given_ref"
     ]
 
-    // Create a variant list 
-    findGapVariants(uta_schema, fasta_ch)
+    validateParameters()
+
+    println "Using variant source: ${params.variant_source}"
+    if (params.variant_source != 'gap_query') {
+        println "Using variant source file: ${params.variant_source_file}"
+    }
+
+    // Parameter validation
+    if (params.variant_source_file != null && params.variant_source != 'csv') {
+        error "You provided an input file but did not choose csv as the variant_source"
+    } else if (params.variant_source_file == null && params.variant_source == 'csv') {
+        error "You indicates csv as the variant_source, but did not provide a variant_source_file"
+    }
+
+    // Read variants 
+    def ch_variants
+    if (params.variant_source == 'csv') {
+        ch_variants = params.variant_source_file
+    } 
+    else if (params.variant_source == 'gap_query') {
+        ch_variants = findGapVariants(uta_schema, fasta_ch)
+    } 
+    else {
+        error "Unknown variant source: ${params.variant_source}"
+    }
 
     // Generate nomenclature using hgvs package
-    writeHgvsNomenclatureToCsv(findGapVariants.out.gaps_and_variants)
+    writeHgvsNomenclatureToCsv(fasta_ch, ch_variants)
 
     // Convert variant list to annovar avinput file 
-    csvToAvinput(findGapVariants.out.gaps_and_variants)
+    csvToAvinput(ch_variants)
 
     // Run annovar on the avinput file
     runAnnovar(csvToAvinput.out.annovar_avinput)
@@ -45,7 +69,7 @@ workflow {
     writeAnnovarNomenclatureToCsv(runAnnovar.out.multianno)
     
     // Convert variant list to vcf to be used by SnpEff and VEP
-    csvToVcf(findGapVariants.out.gaps_and_variants)
+    csvToVcf(ch_variants)
 
     // Run SnpEfff on vcf 
     runSnpEff(csvToVcf.out.vcf)
@@ -54,7 +78,7 @@ workflow {
     writeSnpEffNomenclatureToCsv(runSnpEff.out.snpeff_tsv)
 
     // Lookup Muttalizaer annotatinos in local cache
-    writeMutalyzerNomenclatureToCsv(findGapVariants.out.gaps_and_variants, params.mutilizer_cache)
+    writeMutalyzerNomenclatureToCsv(ch_variants, params.mutilizer_cache)
 
     // Run VEP onece using coding sequence for reference andusing hg19 for reference 
     runVepRefseq(csvToVcf.out.vcf, params.vep_fasta, 'refseq', vep_sequence_modes.refseq)
@@ -65,7 +89,7 @@ workflow {
     writeVepHg19NomenclatureToCsv(runVepHg19.out.vep_output, 'hg19')
 
     // Compare hgvs and annovar, join hgvs, annovar, and gaps file into final output
-    joinAndCompare(findGapVariants.out.gaps_and_variants, 
+    joinAndCompare(ch_variants, 
                    writeHgvsNomenclatureToCsv.out.hgvs_nomenclature,
                    writeAnnovarNomenclatureToCsv.out.annovar_nomenclature,
                    writeSnpEffNomenclatureToCsv.out.snpeff_nomenclature,
@@ -73,5 +97,5 @@ workflow {
                    writeVepRefseqNomenclatureToCsv.out.vep_nomenclature,
                    writeVepHg19NomenclatureToCsv.out.vep_nomenclature)
 
-    find_missing_mutalyzer_variants(joinAndCompare.out.gap_nomenclature_all_transcripts_all_fields, params.mutilizer_cache)
+    find_missing_mutalyzer_variants(joinAndCompare.out.nomenclature_all_transcripts_all_fields, params.mutilizer_cache)
 }

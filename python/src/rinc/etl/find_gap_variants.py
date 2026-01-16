@@ -16,23 +16,6 @@ from rinc.util.log_config import LogConfig
 from collections import Counter
 from rinc.util.tx_eff_pysam import PysamTxEff
 from rinc.util.vcf_to_gdot import get_gdot
-from rinc.variant_transcript import VariantTranscript
-
-def get_variants(variants_file: str):
-    """
-    Read the csv file that has the variants that will be processed. 
-    """
-    variants = [] 
-    with open(variants_file, mode='r') as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            variants.append(VariantTranscript(row['chromosome'], 
-                                              int(row['position']),
-                                              row['reference'], 
-                                              row['alt'],
-                                              row['cdna_transcript'], 
-                                              g_dot=row['g_dot']))
-    return variants
 
 class FindGapVariants(object):
     '''
@@ -145,14 +128,14 @@ class FindGapVariants(object):
                               'reference': reference,
                               'alt': alt,
                               'cdna_transcript': gap['tx_ac'],
-                              'strand': gap['alt_strand'],
-                              'cigar': gap['cigar'],
-                              'alt_start_i': gap['alt_start_i'],
-                              'alt_end_i': gap['alt_end_i'],
-                              'ord': gap['ord'],
-                              'alt_ac': gap['alt_ac'],
-                              'symbol': gap['symbol'],      
-                              'g_dot': self._get_g_dot(chromosome, position, reference, alt)
+                              'gap.strand': gap['alt_strand'],
+                              'gap.cigar': gap['cigar'],
+                              'gap.alt_start_i': gap['alt_start_i'],
+                              'gap.alt_end_i': gap['alt_end_i'],
+                              'gap.ord': gap['ord'],
+                              'gap.alt_ac': gap['alt_ac'],
+                              'gap.symbol': gap['symbol'],      
+                              'gap.g_dot': self._get_g_dot(chromosome, position, reference, alt)
                               }
         
         return variant_transcript
@@ -166,7 +149,7 @@ class FindGapVariants(object):
         return refseq_chromosome + ':g.' + gdot
     
         
-    def get_variants(self, gaps: list[dict]):
+    def get_simulated_variants(self, gaps: list[dict]):
         """
         """
         variant_transcripts = []
@@ -218,7 +201,7 @@ def main():
     
     fgv = FindGapVariants(args.uta_schema, args.fasta)
     gaps = fgv.find_gaps()
-    variants = fgv.get_variants(gaps)
+    variants = fgv.get_simulated_variants(gaps)
     fgv.write(args.out, variants)
     
 if __name__ == '__main__':

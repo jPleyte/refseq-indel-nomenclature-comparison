@@ -17,7 +17,7 @@ process writeVepNomenclatureToCsv {
     """
     python -m rinc.vep.vep_nomenclature    \
            --label ${label}                \
-           --vep_resuls ${vep_output_tsv}  \
+           --vep_results ${vep_output_tsv}  \
            --out vep_${label}_nomenclature.csv
     """
 }

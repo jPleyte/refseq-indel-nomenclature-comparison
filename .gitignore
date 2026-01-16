@@ -216,3 +216,5 @@ nextflow/work
 nextflow/results
 nextflow/.nextflow
 nextflow/.nextflow.log.*
+
+.DS_Store

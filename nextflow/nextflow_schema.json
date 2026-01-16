@@ -1,0 +1,68 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema",
+    "$id": "https://raw.githubusercontent.com/YOUR_PIPELINE/master/nextflow_schema.json",
+    "title": "Nomenclature Comparison Workflow",
+    "description": "This pipeline uses Nextflow to generate and compare c. and p. nomenclature from multiple sources",
+    "type": "object",
+    "properties": {
+        "vep_fasta": {
+            "type": "string",
+            "description": "Vep fasta file"
+        },
+        "vep_dir": {
+            "type": "string",
+            "description": "Location of vep files"
+        },
+        "vep": {
+            "type": "string",
+            "description": "Vep executable",
+            "default": "/opt/bioinformatics/ensembl-vep/vep"
+        },
+        "snpsift_jar": {
+            "type": "string",
+            "description": "SnpSift jar",
+            "default": "/opt/bioinformatics/snpEff/SnpSift.jar"
+        },
+        "snpeff_oneperline_pl": {
+            "type": "string",
+            "description": "SnpEff result helper script",
+            "default": "/opt/bioinformatics/snpEff/scripts//_OLD/vcfEffOnePerLine.pl"
+        },
+        "snpeff_jar": {
+            "type": "string",
+            "default": "/opt/bioinformatics/snpEff/snpEff.jar",
+            "description": "SnpEff jar"
+        },
+        "fasta": {
+            "type": "string",
+            "description": "FASTA file for general use"
+        },
+        "mutilizer_cache": {
+            "type": "string",
+            "description": "${projectDir}/../data/mutalyzer_db.csv"
+        },
+        "uta_schema": {
+            "type": "string",
+            "description": "UTA database scheme used when querying for gap variants",
+            "default": "uta_20241220"
+        },
+        "variant_source": {
+            "type": "string",
+            "description": "Source for variants that will be processed",
+            "default": "gap_query"
+        },
+        "variant_source_file": {
+            "type": "string",
+            "description": "CSV file to read variants"
+        },
+        "outdir": {
+            "type": "string",
+            "description": "Directory for all process output",
+            "default": "results"
+        }
+    },
+    "required": [
+        "fasta",
+        "variant_source"
+    ]
+}

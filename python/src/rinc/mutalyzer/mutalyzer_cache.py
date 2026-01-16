@@ -9,35 +9,12 @@ Created on Jan 11, 2026
 @author: pleyte
 '''
 import argparse
-from collections import Counter
 import csv
-from dataclasses import dataclass, asdict
 import logging.config
 import os
 import re
-
+import pandas as pd
 from rinc.util.log_config import LogConfig
-
-
-@dataclass(slots=True)
-class MutilzizerResult():
-    input_description: str
-    
-    normalized: str = None
-    refseq_chromosome: str = None
-    cdna_transcript: str = None
-    protein_transcript: str = None
-    g_dot: str = None
-    c_dot: str = None
-    p_dot: str = None
-    
-    # When true, indicates that this variant has been queried and normalied but no transcripts found at this location
-    is_empty: bool = False
-    
-    def __post_init__(self):
-        # Fix the is_empty_ boolean type if it was read as a string
-        if isinstance(self.is_empty, str):
-            self.is_empty = (self.is_empty.lower() == "true")
 
 class MytalyzerCache(object):
     '''
@@ -51,145 +28,162 @@ class MytalyzerCache(object):
         self._cache_db_file = cache_db_file
         self._cache_db = self._load()
     
-    def find(self, refseq_chromosome, g_dot, refseq_cdna_transcript) -> MutilzizerResult:
+    def find(self, refseq_chromosome, g_dot, refseq_cdna_transcript):
         """
         Return result matching parameters or None if not found
         """
-        return self._cache_db.get(self._get_db_key(refseq_chromosome, g_dot, refseq_cdna_transcript))
+        results = self._cache_db[(self._cache_db['refseq_chromosome'] == refseq_chromosome) & 
+                                 (self._cache_db['g_dot'] == g_dot) & 
+                                 (self._cache_db['cdna_transcript'] == refseq_cdna_transcript)]
+        
+        if results.empty:
+            # Try looking it up without transcript  
+            results = self._cache_db[(self._cache_db['refseq_chromosome'] == refseq_chromosome) & 
+                                 (self._cache_db['g_dot'] == g_dot)]
+        
+        if results.shape[0] > 1: 
+            raise ValueError(f"Multiple rows matching: refseq_chromosome={refseq_chromosome}, g_dot={g_dot}, transcript={refseq_cdna_transcript}")
+        elif results.shape[0] == 1:
+            return results.iloc[0]
+        else:
+            return results
         
     def _load(self) -> dict:
         """
         Open and read in all rows in the local database
         """
+        variant_schema = {
+            'input_description': str,  
+            'normalized': str,
+            'status': str,
+            'refseq_chromosome': str,
+            'cdna_transcript': str,
+            'protein_transcript': str,
+            'g_dot': str,
+            'c_dot': str,
+            'p_dot': str,            
+            'no_nomenclature': bool
+        }
+        
         # Return empty db if db file doesn't exist yet
         if not os.path.isfile(self._cache_db_file):
             self._logger.info(f"Local database {self._cache_db_file} does not exist yet.")
-            return {}
+            cols = variant_schema.keys() 
+            df = pd.DataFrame(columns=cols)
+            return df.astype(variant_schema)        
         
-        with open(self._cache_db_file, 'r', encoding='utf-8') as f:
-            db = {}
-            reader = csv.DictReader(f)
-            for row in reader:
-                mr =  MutilzizerResult(**row)
-                key = self._get_db_key_mr(mr)
-                assert key not in db
-                db[key] = mr
+        df = pd.read_csv(self._cache_db_file, dtype=variant_schema)
             
-            self._logger.info(f"Read {len(db)} from {self._cache_db_file}")
-            return db
+        self._logger.info(f"Read {df.shape[0]} rows from {self._cache_db_file}")
+        return df
         
     def save_db(self):
         """
         Write all values to file        
         """
-        with open(self._cache_db_file, 'w', newline='', encoding='utf-8') as f:
-            # Use the class fields as header names
-            writer = csv.DictWriter(f, fieldnames=MutilzizerResult.__annotations__.keys())
-            writer.writeheader()
-            for x in self._cache_db.values():
-                writer.writerow(asdict(x))
-        
-        self._logger.info(f"Wrote {len(self._cache_db)} results to {self._cache_db_file}")
-        
-    def _get_db_key_mr(self, mr: MutilzizerResult):
-        """
-        Return the database key for MutilzizerResult 
-        """
-        if mr.is_empty:
-            return self._get_db_key(mr.refseq_chromosome, mr.g_dot, "noTranscript")
-        else:
-            return self._get_db_key(mr.refseq_chromosome, mr.g_dot, mr.cdna_transcript)
+        self._cache_db.to_csv(self._cache_db_file, index=False)
+        self._logger.info(f"Wrote {self._cache_db.shape[0]} results to {self._cache_db_file}")
     
-    def _get_db_key(self, refseq_chromosome, g_dot, refseq_cdna_transcript):
+    def _remove_equivalent_results(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Return the database key constructed from the given fields
+        We may end up with duplicate rows as a result of requesting the same thing different ways. 
+        Example: The g. request "NC_000016.9:g.3602211C>T" and the c. request "NC_000016.9(NM_178844.4):c.2336G>A" produce the same result.
+            When that happens we must drop one in order to maintain row uniqueness among the rest of the fields. 
         """
-        transcript = "noTranscript" if refseq_cdna_transcript is None else refseq_cdna_transcript  
-        assert refseq_chromosome.startswith("NC")
-        assert g_dot.startswith("g."), f"Expecting g. that starts with g. but got {g_dot}"
-        assert transcript == 'noTranscript' or refseq_cdna_transcript.startswith("NM") 
+        mask = df['input_description'].str.contains('g.', na=False)
+        filtered_df = df[mask]
+        for index, row in filtered_df.iterrows():
+            refseq_chromosome = row['refseq_chromosome']
+            g_dot = row['g_dot']
+            cdna_transcript = row['cdna_transcript']
+            
+            duplicates = df[(df['refseq_chromosome'] == refseq_chromosome) & 
+                            (df['g_dot'] == g_dot) & 
+                            (df['cdna_transcript'] == cdna_transcript) &
+                            (df['input_description'].str.contains('c.'))
+                            ]
+            
+            if not duplicates.empty:
+                assert duplicates.shape[0] == 1, f"When there is a duplicate there should be only one: chr={refseq_chromosome}, g.={g_dot}, transcript={cdna_transcript}"
                 
-        return f"{refseq_chromosome}-{g_dot}-{transcript}"
-    
-    def _are_equal(self, a:MutilzizerResult, b: MutilzizerResult):
-        if not a or not b:
-            raise ValueError(f"left or right side of comparison is missing: {a} == {b}")
-        if a.input_description != b.input_description:
-            return False
+                self._logger.info(f"Dropping c. equivalent of of {row['input_description']}")
+                df.drop(duplicates.index, inplace=True)
         
-        if a.normalized != b.normalized:
-            return False
-        
-        if a.is_empty and b.is_empty:
-            return True
-        
-        return (a.g_dot == b.g_dot and
-                a.refseq_chromosome == b.refseq_chromosome and
-                a.c_dot == b.c_dot and
-                a.cdna_transcript == b.cdna_transcript and
-                a.p_dot == b.p_dot and
-                a.protein_transcript == b.protein_transcript)
-                 
-        
+        return df
+                
     def import_results(self, batch_result_file):
         """
         Read the csv containing mutalyzer results 
         """
-        count = Counter()
+        new_results = []
         with open(batch_result_file, mode='r') as file:
             reader = csv.DictReader(file, delimiter='\t')
             for row in reader:
-                if row['Status'] == "Failed":
-                    print(f"Encountered failed variant: {row['Input description']}")
-                    count['failed'] += 1
-                    continue
-                
-                mr = self._read_row(row)
-
-                db_key = self._get_db_key_mr(mr)
-                if db_key in self._cache_db:
-                    if self._are_equal(mr, self._cache_db.get(db_key)):
-                        count['import_already_exists'] += 1
-                        self._logger.info(f"Record already exists, skipping: {mr.input_description}")
-                    else:
-                        raise ValueError(f"Local values and incoming values are different for: {mr.input_description}")
-                else:
-                    self._cache_db[db_key] = mr
-                    count['import_new_record'] += 1
+                mr = self._read_mutalyzer_result(row)
+                new_results.append(mr)
         
-        self._logger.info(f"Imported {batch_result_file}: {count}")
+        new_df = pd.DataFrame(new_results)
+        
+        old_size = self._cache_db.shape[0]
+        
+        
+        self._cache_db = self._remove_equivalent_results(pd.concat([self._cache_db, new_df]).drop_duplicates(ignore_index=True))
+        
                 
-    def _read_row(self, row):
+        new_size = self._cache_db.shape[0]
+        
+        self._logger.info(f"Imported {new_size-old_size} new results. New size is {new_size}")
+                
+    def _read_mutalyzer_result(self, row):
         """
         Extract values from a row read from the Batch Processor csv
-        """
-        mr = MutilzizerResult(row['Input description'])
-        mr.normalized = row['Normalized']
+        """            
+        mutalyzer_result = {}
+        mutalyzer_result['input_description'] = row['Input description']
+        mutalyzer_result['normalized'] = row['Normalized']
+        mutalyzer_result['status'] = row['Status']
+
+        if row['Status'] == "Failed":
+            # When status=Faild it'probably s because the reference values were incorrect.
+            # Should we set mutalyzer_result['no_nomenclature'] = True?
+            mutalyzer_result['no_nomenclature'] = False 
+            return mutalyzer_result
                 
-        # Parse "g." and refseq chromosome (NC_) from Normalized field
-        refseq_chromosome_n, g_dot = self._get_normalized_parts(row['Normalized'])
-        mr.refseq_chromosome = refseq_chromosome_n
-        mr.g_dot = g_dot
+        # Get the g. which comes from different fields depending on the original request type
+        mutalyzer_result['refseq_chromosome'], mutalyzer_result['g_dot'] = self.get_g_dot_parts(row)
         
-        # Parse c. and cdna transcript from "DNA transcript" field. May return three None values
-        refseq_chromosome_d, cdna_transcript, c_dot = self._get_dna_transcript_parts(row['DNA transcript'])
+        # If the request was a g. string then parse c. and cdna transcript from "DNA transcript" field. May return three None values
+        # When the request was a c. then it sets DNA Transcript to "N/A" and we just parse our c. out of the Normalized field. 
+        dna_genomic = row['Normalized'] if ("c." in row['Input description'] and row['DNA transcript'] == "N/A") else row['DNA transcript']         
+        refseq_chromosome_d, cdna_transcript, c_dot = self._get_dna_transcript_parts(dna_genomic)
         if not (refseq_chromosome_d is None and cdna_transcript is None and c_dot is None):
-            assert refseq_chromosome_n == refseq_chromosome_d, "Normalized chromosome and DNA chromosome should be the same"
-            mr.cdna_transcript = cdna_transcript
-            mr.c_dot = c_dot
+            assert mutalyzer_result['refseq_chromosome'] == refseq_chromosome_d, "Normalized chromosome and DNA chromosome should be the same"
+            mutalyzer_result['cdna_transcript'] = cdna_transcript
+            mutalyzer_result['c_dot'] = c_dot
         
         # Parse p. and protein transcript from "Protein" field. May return three None values
         refseq_chromosome_p, protein_transcript, p_dot = self._get_protein_parts(row['Protein'])
         if not (refseq_chromosome_p is None and protein_transcript is None and p_dot is None):
-            assert refseq_chromosome_p == refseq_chromosome_d, "Normalized chromosome and protein chromosome should be the same"
-            mr.protein_transcript = protein_transcript
-            mr.p_dot = self._get_pdot_without_parenthesis(p_dot)
+            assert refseq_chromosome_p == refseq_chromosome_d, f"Normalized chromosome and protein chromosome should be the same: {refseq_chromosome_p} != {refseq_chromosome_d}. See {row['Input description']}"
+            mutalyzer_result['protein_transcript'] = protein_transcript
+            mutalyzer_result['p_dot'] = self._get_pdot_without_parenthesis(p_dot)
         
         if refseq_chromosome_d is None and cdna_transcript is None and c_dot is None and refseq_chromosome_p is None and protein_transcript is None and p_dot is None:                    
-            mr.is_empty = True
+            mutalyzer_result['no_nomenclature'] = True
+        else: 
+            mutalyzer_result['no_nomenclature'] = False
         
-        return mr
+        return mutalyzer_result
     
+    def get_g_dot_parts(self, row: dict) -> (str, str):
+        """
+        Parse "g." and refseq chromosome (NC_) from the "DNA genomic" or "Normalized" field
+        """
+        if row['DNA genomic'] != 'N/A':
+            return self._get_normalized_parts(row['DNA genomic'])
+        else:
+            return self._get_normalized_parts(row['Normalized'])
+                      
     def _get_pdot_without_parenthesis(self, p_dot: str) -> str:
         """
         Remove parenthesis from p. (even though it is wrong to do so)
@@ -205,10 +199,7 @@ class MytalyzerCache(object):
         normalized string should look like "NC_000012.11:g.9994422G>A" 
         """
         assert normalized, "Normalized value must not be empty"
-        try:
-            ref_chr, g_dot = normalized.split(':')
-        except ValueError as e:
-            print(e)
+        ref_chr, g_dot = normalized.split(':')
         
         assert ref_chr.startswith("NC_"), "Refseq chromosome must start with NC"
         assert g_dot.startswith("g."), "g. must start with g."

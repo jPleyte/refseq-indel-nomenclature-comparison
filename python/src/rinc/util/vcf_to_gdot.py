@@ -5,6 +5,7 @@ Manage the conversion of VCF variant calls to gdot format.
 """
 from typing import Tuple
 from rinc.util.tx_eff_pysam import PysamTxEff
+from rinc.util import chromosome_map
 
 class HGVSNomenclature:
 
@@ -235,8 +236,29 @@ class Deletion(HGVSNomenclature):
             return f"{self.del_start}_{self.del_end}del"
 
 
-def get_gdot(chrom: str, pos: int, ref: str, alt: str, pysam_tx: PysamTxEff):
-    # Set mapping between variant types and classes
+# def _get_gdot(chrom: str, pos: int, ref: str, alt: str, pysam_tx: PysamTxEff):
+#     """
+#     Returns a g.dot but i don't recommend using this method  
+#     """
+#     # Set mapping between variant types and classes
+#     vrnt_type_map = {'del': Deletion,
+#                      'delins': Indel,
+#                      'dup': Duplication,
+#                      'ins': Insertion,
+#                      'inv': Inversion,
+#                      'sub': Substitution
+#                      }
+#
+#     vrnt_type = HGVSNomenclature(chrom, pos, ref, alt, pysam_tx).get_variant_type()
+#     gdot = vrnt_type_map[vrnt_type](chrom, pos, ref, alt, pysam_tx).get_hgvs_coord()
+#     return gdot
+
+def get_gdot_plus(chrom: str, pos: int, ref: str, alt: str, pysam_tx: PysamTxEff) -> (str,str):
+    """
+    Returns g_dot and the variant type
+    1) Return the full g.dot include chromsome andg. prefix
+    2) Returns the variant type (eg del, delins, etc)
+    """
     vrnt_type_map = {'del': Deletion,
                      'delins': Indel,
                      'dup': Duplication,
@@ -246,5 +268,13 @@ def get_gdot(chrom: str, pos: int, ref: str, alt: str, pysam_tx: PysamTxEff):
                      }
 
     vrnt_type = HGVSNomenclature(chrom, pos, ref, alt, pysam_tx).get_variant_type()
-    gdot = vrnt_type_map[vrnt_type](chrom, pos, ref, alt, pysam_tx).get_hgvs_coord()
-    return gdot
+    g_dot_part = vrnt_type_map[vrnt_type](chrom, pos, ref, alt, pysam_tx).get_hgvs_coord()
+
+    refseq_chromosome = chromosome_map.get_refseq(chrom)
+    
+    g_dot_full = refseq_chromosome + ':g.' + g_dot_part
+    
+    return g_dot_full, vrnt_type
+    
+    
+    

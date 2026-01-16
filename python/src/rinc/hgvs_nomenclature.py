@@ -12,12 +12,13 @@ import hgvs.parser
 import hgvs.dataproviders.uta
 import hgvs.assemblymapper
 
-from rinc.util import chromosome_map
+from rinc.util import chromosome_map, vcf_to_gdot
 from rinc.variant_transcript import VariantTranscript
 from hgvs.transcriptmapper import TranscriptMapper
 from rinc.util.log_config import LogConfig
 from hgvs.exceptions import HGVSDataNotAvailableError
-from rinc.etl import find_gap_variants
+from rinc.io import variant_helper
+from rinc.util.tx_eff_pysam import PysamTxEff
 
 ASSEMBLY_VERSION = "GRCh37"
 
@@ -25,11 +26,12 @@ class HgvsNomenclature(object):
     '''
     classdocs
     '''
-    def __init__(self):
+    def __init__(self, fasta_file):
         '''
         Constructor
         '''
         self._logger = logging.getLogger(__name__)
+        self._pysqm_txeff = PysamTxEff(fasta_file)
     
     def _get_exon(self, hdp: hgvs.dataproviders.uta.UTA_postgresql, var_c: hgvs.sequencevariant.SequenceVariant, refseq_chromosome: str) -> int:
         """
@@ -70,11 +72,11 @@ class HgvsNomenclature(object):
         try:
             for var in variants:
                 try:
-                    var.notes.append("source=hgvs/uta")
                     
-                    chromosome_map.get_refseq(var.chromosome)
+                    var.g_dot, variant_type = vcf_to_gdot.get_gdot_plus(var.chromosome, var.position, var.reference, var.alt, self._pysqm_txeff)
+                    var.additional_fields['variant_type'] = variant_type
                     
-                    var_g =hp.parse_hgvs_variant(var.g_dot)
+                    var_g = hp.parse_hgvs_variant(var.g_dot)
                     var_c = am.g_to_c(var_g, var.cdna_transcript)
                     var_p = am.c_to_p(var_c)
                     
@@ -87,13 +89,15 @@ class HgvsNomenclature(object):
                     var.p_dot1 = var_p.format(conf={"p_3_letter": False}).replace(var_p.ac + ':', '')
                     var.p_dot3 = var_p.format(conf={"p_3_letter": True}).replace(var_p.ac + ':', '')
                     
-                    var.exon, var.strand, note = self._get_exon(hdp, var_c, chromosome_map.get_refseq(var.chromosome))
+                    # Determine exon the way tfx does it
+                    var.exon = self.get_exon_the_tfx_way(hdp, var)                    
+                    exon_other, var.strand, note = self._get_exon(hdp, var_c, chromosome_map.get_refseq(var.chromosome))
+                    var.additional_fields['exon_other'] = exon_other
+                    
                     if note: 
                         var.notes.append(note)
                     
-                    # jDebug: determine exon the way tfx does it
-                    var.additional_fields['hu.tfx_exon'] = self.get_exon_another_way(hdp, var) 
-
+                    
                     tx_info = hdp.get_tx_info(var_c.ac, chromosome_map.get_refseq(var.chromosome), 'splign')
                     var.gene = tx_info['hgnc']
                 except HGVSDataNotAvailableError as e:
@@ -106,9 +110,9 @@ class HgvsNomenclature(object):
         finally:
             hdp.close()
             
-    def get_exon_another_way(self, hdp, variant: VariantTranscript):
+    def get_exon_the_tfx_way(self, hdp, variant: VariantTranscript):
         """
-        JDebug determine the exon number using the tfx method
+        Determine the exon number using the tfx method
         """
         exons = hdp.get_tx_exons(variant.cdna_transcript,
                                  chromosome_map.get_refseq(variant.chromosome),
@@ -204,8 +208,8 @@ class HgvsNomenclature(object):
     def write(self, out_filename, variant_transcripts: list[VariantTranscript]):
         headers = ['chromosome', 'position', 'reference', 'alt',
                    'cdna_transcript', 'hu.protein_transcript', 
-                   'hu.exon', 'hu.tfx_exon', 'hu.strand', 'hu.gene', 
-                   'hu.g_dot', 'hu.c_dot', 'hu.p_dot1', 'hu.p_dot3', 
+                   'hu.exon', 'hu.exon_other', 'hu.strand', 'hu.gene', 
+                   'hu.g_dot', 'hu.c_dot', 'hu.p_dot1', 'hu.p_dot3', 'hu.variant_type',
                    'hu.note']
         
         with open(out_filename, 'w', newline='') as output:
@@ -215,17 +219,18 @@ class HgvsNomenclature(object):
             for v in variant_transcripts:
                 writer.writerow([v.chromosome, v.position, v.reference, v.alt, 
                                  v.cdna_transcript, v.protein_transcript, 
-                                 v.exon, v.additional_fields['hu.tfx_exon'], 
+                                 v.exon, v.additional_fields['exon_other'], 
                                  v.strand, v.gene,
-                                 v.g_dot, v.c_dot, v.p_dot1, v.p_dot3,
+                                 v.g_dot, v.c_dot, v.p_dot1, v.p_dot3, v.additional_fields['variant_type'],
                                  ";".join(v.notes)])
             
         self._logger.info(f"Wrote {len(variant_transcripts)} variant transcripts to {out_filename}")
     
 
 def _parse_args():
-    parser = argparse.ArgumentParser(description='Use hgvs to determine protein changes for a list of variants')
+    parser = argparse.ArgumentParser(description='Use hgvs to determine protein changes for a list of variant_helper')    
     parser.add_argument("--version", action="version", version="0.0.1")
+    parser.add_argument("--fasta", help="hg fasta", required=True)
     parser.add_argument("--variants", help="File with variants (csv)", required=True)
     parser.add_argument("--out", help="output file (csv)", required=True)
     args = parser.parse_args()
@@ -236,13 +241,14 @@ def main():
 
     args = _parse_args()
 
-    hn = HgvsNomenclature()
+    hn = HgvsNomenclature(args.fasta)
 
     # Read variants from csv 
-    variants = find_gap_variants.get_variants(args.variants)
+    variants = variant_helper.get_variants(args.variants)
+    
     logging.debug(f"Read {len(variants)} variants from {args.variants}")
 
-    # Update variants with c. and p. changes 
+    # Update variant_helper with c. and p. changes 
     hn.update_with_changes(variants)
 
     hn.write(args.out, variants)

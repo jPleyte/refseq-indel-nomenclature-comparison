@@ -7,6 +7,7 @@ process writeHgvsNomenclatureToCsv {
     publishDir "${params.outdir}", mode: 'symlink'
 
     input:    
+    path fasta
     path variants
     
     output:
@@ -15,6 +16,7 @@ process writeHgvsNomenclatureToCsv {
     script:
     """
     python -m rinc.hgvs_nomenclature \
+           --fasta ${fasta} \
            --variants ${variants} \
            --out hgvs_nomenclature.csv
     """
