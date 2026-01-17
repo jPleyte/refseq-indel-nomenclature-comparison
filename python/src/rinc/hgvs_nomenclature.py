@@ -16,7 +16,8 @@ from rinc.util import chromosome_map, vcf_to_gdot
 from rinc.variant_transcript import VariantTranscript
 from hgvs.transcriptmapper import TranscriptMapper
 from rinc.util.log_config import LogConfig
-from hgvs.exceptions import HGVSDataNotAvailableError
+from hgvs.exceptions import HGVSDataNotAvailableError, HGVSInvalidIntervalError,\
+    HGVSInvalidVariantError
 from rinc.io import variant_helper
 from rinc.util.tx_eff_pysam import PysamTxEff
 
@@ -77,7 +78,7 @@ class HgvsNomenclature(object):
                     var.additional_fields['variant_type'] = variant_type
                     
                     var_g = hp.parse_hgvs_variant(var.g_dot)
-                    var_c = am.g_to_c(var_g, var.cdna_transcript)
+                    var_c = am.g_to_c(var_g, var.cdna_transcript)                        
                     var_p = am.c_to_p(var_c)
                     
                     # Don't wrap p. in parenthesis
@@ -95,15 +96,19 @@ class HgvsNomenclature(object):
                     var.additional_fields['exon_other'] = exon_other
                     
                     if note: 
-                        var.notes.append(note)
-                    
+                        var.notes.append(note)                    
                     
                     tx_info = hdp.get_tx_info(var_c.ac, chromosome_map.get_refseq(var.chromosome), 'splign')
                     var.gene = tx_info['hgnc']
                 except HGVSDataNotAvailableError as e:
                     self._logger.warning(f"Unable to parse {var}, but it's ok, this happens when sequence not found in local SeqRepo: {e}")
-                    var.notes.append("Encountered HGVSDataNotAvailableError")
-                    var.additional_fields['hu.tfx_exon'] = None
+                    var.notes.append("Encountered HGVSDataNotAvailableError.")                    
+                except HGVSInvalidIntervalError as e:
+                    self._logger.warning(f"Unable to parse {var}: {e}")
+                    var.notes.append(f"Encountered HGVSInvalidIntervalError: {e}")
+                except HGVSInvalidVariantError as e:
+                    self._logger.warning(f"Invalid variant {var}: {e}")
+                    var.notes.append(f"Encountered HGVSInvalidVariantError: {e}")
                 except Exception as e:
                     self._logger.error(f"Error processing variant {var}: {e}")
                     raise
@@ -219,7 +224,7 @@ class HgvsNomenclature(object):
             for v in variant_transcripts:
                 writer.writerow([v.chromosome, v.position, v.reference, v.alt, 
                                  v.cdna_transcript, v.protein_transcript, 
-                                 v.exon, v.additional_fields['exon_other'], 
+                                 v.exon, None if 'exon_other' not in v.additional_fields else v.additional_fields['exon_other'], 
                                  v.strand, v.gene,
                                  v.g_dot, v.c_dot, v.p_dot1, v.p_dot3, v.additional_fields['variant_type'],
                                  ";".join(v.notes)])

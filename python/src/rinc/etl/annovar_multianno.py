@@ -84,13 +84,24 @@ class AnnovarMultianno(object):
         
     def _get_protein_values(self, transcript: str, aa_change_field: str):
         """
-        Parse details for a specific transcript from the Annovar AAChange.refGeneWithVer field whch is delimited by ',' and ':'
-        """
-        if aa_change_field == "." or aa_change_field == "UNKNOWN":
-            return None, None, None, None
+        Parse details for a specific transcript from the Annovar AAChange.refGeneWithVer field which is delimited by ',' and ':' and sometimes even a third delimiter ';'
+        eg with pdot: "MAGT1:NM_001367916.1:exon2:c.C127T:p.Q43X,MAGT1:NM_032121.5:exon2:c.C223T:p.Q75X"
+        or w/o pdot: "TNFRSF14:NM_003820.3:exon1:c.-13_1delinsC,TNFRSF14:NM_001297605.1:exon1:c.-13_1delinsC"
         
-        for aa_detail in aa_change_field.split(","):
-            gene, aa_transcript, exon, c_dot, p_dot = aa_detail.split(':')
+        """
+        for aa_detail in re.split(r'[,;]', aa_change_field): 
+            if aa_detail == "." or aa_detail == "UNKNOWN":
+                continue
+            
+            gene, aa_transcript, exon, c_dot, *rest = aa_detail.split(':')
+            
+            if rest and len(rest) > 1:
+                raise ValueError(f"annovar string has more than five parts: {aa_change_field}")
+            elif rest:
+                p_dot = rest[0]
+            else:
+                p_dot = None
+
             if aa_transcript == transcript:
                 return gene, exon, c_dot, p_dot
         

@@ -28,6 +28,24 @@ class MytalyzerCache(object):
         self._cache_db_file = cache_db_file
         self._cache_db = self._load()
     
+    def find_no_nomenclature_placeholder(self, refseq_chromosome, g_dot):
+        """
+        When we send a request to mutalyzer and it comes back without any c. or p. then we still store the result
+        in the cache so that we know not to put that request in a batch again. Normally you should use the ``find`` 
+        function to looks for mutlayzer results. But if ``find`` comes back empty and you just want to know 
+        if this g_dot has been used in a request before then use this function.          
+        """
+        results = self._cache_db[(self._cache_db['refseq_chromosome'] == refseq_chromosome) & 
+                                 (self._cache_db['g_dot'] == g_dot) & 
+                                 ( (self._cache_db['cdna_transcript'] == '') | self._cache_db['cdna_transcript'].isna() )]
+        if results.shape[0] > 1:
+            raise ValueError(f"Multiple rows matching: refseq_chromosome={refseq_chromosome}, g_dot={g_dot}")
+        elif results.shape[0] == 1:
+            return results.iloc[0]
+        else:
+            return results
+
+
     def find(self, refseq_chromosome, g_dot, refseq_cdna_transcript):
         """
         Return result matching parameters or None if not found
@@ -35,13 +53,8 @@ class MytalyzerCache(object):
         results = self._cache_db[(self._cache_db['refseq_chromosome'] == refseq_chromosome) & 
                                  (self._cache_db['g_dot'] == g_dot) & 
                                  (self._cache_db['cdna_transcript'] == refseq_cdna_transcript)]
-        
-        if results.empty:
-            # Try looking it up without transcript  
-            results = self._cache_db[(self._cache_db['refseq_chromosome'] == refseq_chromosome) & 
-                                 (self._cache_db['g_dot'] == g_dot)]
-        
-        if results.shape[0] > 1: 
+
+        if results.shape[0] > 1:
             raise ValueError(f"Multiple rows matching: refseq_chromosome={refseq_chromosome}, g_dot={g_dot}, transcript={refseq_cdna_transcript}")
         elif results.shape[0] == 1:
             return results.iloc[0]
@@ -84,32 +97,32 @@ class MytalyzerCache(object):
         self._cache_db.to_csv(self._cache_db_file, index=False)
         self._logger.info(f"Wrote {self._cache_db.shape[0]} results to {self._cache_db_file}")
     
-    def _remove_equivalent_results(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        We may end up with duplicate rows as a result of requesting the same thing different ways. 
-        Example: The g. request "NC_000016.9:g.3602211C>T" and the c. request "NC_000016.9(NM_178844.4):c.2336G>A" produce the same result.
-            When that happens we must drop one in order to maintain row uniqueness among the rest of the fields. 
-        """
-        mask = df['input_description'].str.contains('g.', na=False)
-        filtered_df = df[mask]
-        for index, row in filtered_df.iterrows():
-            refseq_chromosome = row['refseq_chromosome']
-            g_dot = row['g_dot']
-            cdna_transcript = row['cdna_transcript']
-            
-            duplicates = df[(df['refseq_chromosome'] == refseq_chromosome) & 
-                            (df['g_dot'] == g_dot) & 
-                            (df['cdna_transcript'] == cdna_transcript) &
-                            (df['input_description'].str.contains('c.'))
-                            ]
-            
-            if not duplicates.empty:
-                assert duplicates.shape[0] == 1, f"When there is a duplicate there should be only one: chr={refseq_chromosome}, g.={g_dot}, transcript={cdna_transcript}"
-                
-                self._logger.info(f"Dropping c. equivalent of of {row['input_description']}")
-                df.drop(duplicates.index, inplace=True)
-        
-        return df
+    # def _remove_equivalent_results(self, df: pd.DataFrame) -> pd.DataFrame:
+    #     """
+    #     We may end up with duplicate rows as a result of requesting the same thing different ways. 
+    #     Example: The g. request "NC_000016.9:g.3602211C>T" and the c. request "NC_000016.9(NM_178844.4):c.2336G>A" produce the same result.
+    #         When that happens we must drop one in order to maintain row uniqueness among the rest of the fields. 
+    #     """
+    #     mask = df['input_description'].str.contains('g.', na=False)
+    #     filtered_df = df[mask]
+    #     for index, row in filtered_df.iterrows():
+    #         refseq_chromosome = row['refseq_chromosome']
+    #         g_dot = row['g_dot']
+    #         cdna_transcript = row['cdna_transcript']
+    #
+    #         duplicates = df[(df['refseq_chromosome'] == refseq_chromosome) & 
+    #                         (df['g_dot'] == g_dot) & 
+    #                         (df['cdna_transcript'] == cdna_transcript) &
+    #                         (df['input_description'].str.contains('c.'))
+    #                         ]
+    #
+    #         if not duplicates.empty:
+    #             assert duplicates.shape[0] == 1, f"When there is a duplicate there should be only one: chr={refseq_chromosome}, g.={g_dot}, transcript={cdna_transcript}"
+    #
+    #             self._logger.info(f"Dropping c. equivalent of of {row['input_description']}")
+    #             df.drop(duplicates.index, inplace=True)
+    #
+    #     return df
                 
     def import_results(self, batch_result_file):
         """
@@ -120,15 +133,14 @@ class MytalyzerCache(object):
             reader = csv.DictReader(file, delimiter='\t')
             for row in reader:
                 mr = self._read_mutalyzer_result(row)
+                
                 new_results.append(mr)
         
         new_df = pd.DataFrame(new_results)
         
         old_size = self._cache_db.shape[0]
         
-        
-        self._cache_db = self._remove_equivalent_results(pd.concat([self._cache_db, new_df]).drop_duplicates(ignore_index=True))
-        
+        #self._cache_db = self._remove_equivalent_results(pd.concat([self._cache_db, new_df]).drop_duplicates(ignore_index=True))
                 
         new_size = self._cache_db.shape[0]
         

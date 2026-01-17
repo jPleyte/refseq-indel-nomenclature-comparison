@@ -22,6 +22,7 @@ from pathlib import Path
 from rinc.mutalyzer.mutalyzer_cache import MytalyzerCache
 from collections import Counter
 from rinc.util import chromosome_map
+import pandas as pd
 
 class FinalCsvToMutalyzerBatch(object):
     '''
@@ -46,6 +47,35 @@ class FinalCsvToMutalyzerBatch(object):
         
         return MytalyzerCache(mutalyzer_cache_file)
     
+    def _get_g_dot_field_name(self, row: dict):
+        """
+        Look through all the fields in the row and return one that is a g_dot        
+        """
+        print("jDebug: come back and improve _get_g_dot_field_name")
+        
+        if 'g_dot.tfx' in row.keys():
+            return 'g_dot.tfx'
+        elif 'hu.g_dot' in row.keys():
+            return 'hu.g_dot'
+        elif 'vep.refseq.g_dot' in row.keys():
+            return 'vep.refseq.g_dot'
+        else:
+            return None
+    
+    def _get_c_dot_field_name(self, row: dict):
+        """
+        Look through all the fields in the row and return one that is a c_dot        
+        """
+        print("jDebug: come back and improve _get_c_dot_field_name")
+        if 'c_dot.tfx' in row.keys():
+            return 'c_dot.tfx'
+        elif 'hu.c_dot' in row.keys():
+            return 'hu.c_dot'
+        elif 'vep.refseq.c_dot' in row.keys():
+            return 'vep.refseq.c_dot'
+        else:
+            return None        
+        
     def _get_mutalyzer_result(self, row: dict):
         """
         Look for a Mutalyzer result in our cache that matches the variant  
@@ -55,13 +85,29 @@ class FinalCsvToMutalyzerBatch(object):
             return False
         
         refseq_chromosome_a = chromosome_map.get_refseq(row['chromosome'])
-        refseq_chromosome_b, g_dot = row['g_dot'].split(':')
+        g_dot_field_name = self._get_g_dot_field_name(row)
+        if not g_dot_field_name:
+            # Unable to find a g_dot, return empty dataframe 
+            return pd.DataFrame()
+        elif row[g_dot_field_name] == '':
+            # gdot field is empty
+            return pd.DataFrame()
+            
+        refseq_chromosome_b, g_dot = row[g_dot_field_name].split(':')
         assert refseq_chromosome_a == refseq_chromosome_b, f"Chromosomes do not match for {row['chromosome']}-{row['position']}-{row['reference']}-{row['alt']}-{row['cdna_transcript']}: {refseq_chromosome_a} != {refseq_chromosome_b}"
         
         refseq_cdna_transcript = row['cdna_transcript']
         assert refseq_cdna_transcript, f"cnda transcript is blank for {row['chromosome']}-{row['position']}-{row['reference']}-{row['alt']}"
             
-        return self._mutalyzer_cache.find(refseq_chromosome_a, g_dot, refseq_cdna_transcript) 
+        # Look for a mutalyzer result matching the chromosome, g., and transcript
+        mutalyzer_result = self._mutalyzer_cache.find(refseq_chromosome_a, g_dot, refseq_cdna_transcript)
+        
+        if not mutalyzer_result.empty:
+            return mutalyzer_result
+        
+        # If that came back empty, perform a query without the transcript to see if there is a no_nomenclature placeholder that is just there
+        # to prevent us from sending a request that we have already made. 
+        return self._mutalyzer_cache.find_no_nomenclature_placeholder(refseq_chromosome_a, g_dot)
         
     def _meets_criteria(self, row: dict) -> bool:
         """
@@ -69,6 +115,10 @@ class FinalCsvToMutalyzerBatch(object):
         it has that much then it's worth submitting to Mutalyzer and including in 
         our results. 
         """
+        return True
+    
+        print("jDebug: _meets_criteria not being used")
+
         if row['hu.c_dot'] and row['annovar.c_dot']:
             self._logger.debug(f"Keeping {row['chromosome']}-{row['position']}-{row['reference']}-{row['alt']}-{row['cdna_transcript']} with {row['hu.c_dot']} and {row['annovar.c_dot']}")
             self._criteria_counter['kept'] += 1
@@ -91,15 +141,23 @@ class FinalCsvToMutalyzerBatch(object):
             for row in reader:
                 result_counter['total'] += 1
                 if self._meets_criteria(row):
+                    if row.get('g_dot.tfx') == 'NC_000016.9:g.3602266C>T':
+                        print("jDebug")
                     mr = self._get_mutalyzer_result(row)
                     
                     # If we don't have the
                     if mr.empty:
-                        variants_to_request.add(self._get_batch_request_string_g_dot(row))
-                        variants_to_request.add(self._get_batch_request_string_c_dot(row))
+                        g_dot_string = self._get_batch_request_string_g_dot(row)
+                        if g_dot_string:
+                            variants_to_request.add(g_dot_string)
+                            
+                        c_dot_string = self._get_batch_request_string_c_dot(row)
+                        if c_dot_string:
+                            variants_to_request.add(c_dot_string)
+                            
                         result_counter['new_requst'] += 1
                     else:
-                        result_counter['alredy_known'] += 1
+                        result_counter['already_known'] += 1
                 
         self._logger.info(f"Read {result_counter['total']} variants from {variants_file}")
         self._logger.info(f"Criteria: {self._criteria_counter}")
@@ -113,17 +171,25 @@ class FinalCsvToMutalyzerBatch(object):
         
         """
         # refseq_chromosome, g_dot_only = v.g_dot.split(':')
-        refseq_chromosome, g_dot_only = row['g_dot'].split(':')
-        return f"{refseq_chromosome}:{g_dot_only}"
+        g_dot_field = self._get_g_dot_field_name(row)
+        if g_dot_field and row[g_dot_field]:
+            refseq_chromosome, g_dot_only = row[g_dot_field].split(':')
+            return f"{refseq_chromosome}:{g_dot_only}"
+        else:
+            return None
             
     def _get_batch_request_string_c_dot(self, row:dict) -> str:
         """
         Returns a c. string that we will send in a batch file to Mutalyzer (eg NC_000019.9(NM_001002836.4):c.185C>T)        
         """
         transcript = row['cdna_transcript']
-        refseq_chromosome, _ = row['g_dot'].split(':')
-        c_dot = row['hu.c_dot']
-        return f"{refseq_chromosome}({transcript}):{c_dot}"
+        
+        g_dot_field = self._get_g_dot_field_name(row)
+        c_dot_field = self._get_c_dot_field_name(row)
+        if g_dot_field and row[g_dot_field] and c_dot_field and row[c_dot_field]:
+            refseq_chromosome, _ = row[g_dot_field].split(':')
+            c_dot = row[c_dot_field]
+            return f"{refseq_chromosome}({transcript}):{c_dot}"
         
         
     def write_transcripts(self, out_directory, variants: list[VariantTranscript], batch_size=50):

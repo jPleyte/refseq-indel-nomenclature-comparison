@@ -3,6 +3,7 @@
 // Import the processes from your modules folder
 include { validateParameters; paramsSummaryLog } from 'plugin/nf-validation'
 include { findGapVariants } from './modules/local/variants/find_gap_variants.nf'
+include { getTfxVariants } from './modules/local/variants/get_tfx_variants.nf'
 include { writeHgvsNomenclatureToCsv} from './modules/local/write_hgvs_nomenclature_to_csv.nf'
 include { csvToAvinput } from './modules/local/csv_to_avinput.nf'
 include { runAnnovar } from './modules/local/run_annovar.nf'
@@ -10,13 +11,11 @@ include { writeAnnovarNomenclatureToCsv } from './modules/local/write_annovar_no
 include { csvToVcf } from './modules/local/csv_to_vcf.nf'
 include { runSnpEff } from './modules/local/run_snpeff.nf'
 include { writeSnpEffNomenclatureToCsv } from './modules/local/write_snpeff_nomenclature_to_csv.nf'
-include { writeMutalyzerNomenclatureToCsv } from './modules/local/write_mutalyzer_nomenclature_to_csv.nf'
 include { runVep as runVepRefseq } from './modules/local/run_vep.nf'
 include { runVep as runVepHg19 } from './modules/local/run_vep.nf'
 include { writeVepNomenclatureToCsv as writeVepRefseqNomenclatureToCsv } from './modules/local/write_vep_nomenclature_to_csv.nf'
 include { writeVepNomenclatureToCsv as writeVepHg19NomenclatureToCsv } from './modules/local/write_vep_nomenclature_to_csv.nf'
-include {find_missing_mutalyzer_variants } from './modules/local/find_missing_mutalyzer_variants.nf'
-
+include { writeTfxNomenclatureToCsv } from './modules/local/write_tfx_nomenclature_to_csv.nf'
 
 include { joinAndCompare } from './modules/local/join_and_compare.nf'
 
@@ -35,13 +34,13 @@ workflow {
     println "Using variant source: ${params.variant_source}"
     if (params.variant_source != 'gap_query') {
         println "Using variant source file: ${params.variant_source_file}"
-    }
+    } 
 
     // Parameter validation
-    if (params.variant_source_file != null && params.variant_source != 'csv') {
-        error "You provided an input file but did not choose csv as the variant_source"
-    } else if (params.variant_source_file == null && params.variant_source == 'csv') {
-        error "You indicates csv as the variant_source, but did not provide a variant_source_file"
+    if (params.variant_source_file != null && params.variant_source == 'gap_query') {
+        error "You provided an input file but chose gap_query as the input method, which does not use a file."
+    } else if (params.variant_source_file == null && (params.variant_source == 'csv' || params.variant_source == 'tfx')) {
+        error "You indicated ${params.variant_source} as the variant_source, but did not provide a variant_source_file"
     }
 
     // Read variants 
@@ -51,13 +50,24 @@ workflow {
     } 
     else if (params.variant_source == 'gap_query') {
         ch_variants = findGapVariants(uta_schema, fasta_ch)
-    } 
+    }
+    else if (params.variant_source == 'tfx') {
+        ch_variants = getTfxVariants(params.variant_source_file)
+    }
+    else if (params.variant_source == 'cgd') {
+        error "CGD variant source not yet implemented"
+    }
     else {
         error "Unknown variant source: ${params.variant_source}"
     }
 
-    // Generate nomenclature using hgvs package
-    writeHgvsNomenclatureToCsv(fasta_ch, ch_variants)
+    // Generate nomenclature using hgvs package. 
+    // Do not generate hgvs nomenclature when input source is 'tfx' but tfx uses the same code.
+    def hgvs_nomenclature = channel.empty()
+     if (params.variant_source != 'tfx') {
+        hgvs_nomenclature = writeHgvsNomenclatureToCsv(fasta_ch, ch_variants)
+     }
+    
 
     // Convert variant list to annovar avinput file 
     csvToAvinput(ch_variants)
@@ -77,9 +87,6 @@ workflow {
     // Extract SnpEff nomenclature and write to new csv
     writeSnpEffNomenclatureToCsv(runSnpEff.out.snpeff_tsv)
 
-    // Lookup Muttalizaer annotatinos in local cache
-    writeMutalyzerNomenclatureToCsv(ch_variants, params.mutilizer_cache)
-
     // Run VEP onece using coding sequence for reference andusing hg19 for reference 
     runVepRefseq(csvToVcf.out.vcf, params.vep_fasta, 'refseq', vep_sequence_modes.refseq)
     runVepHg19(csvToVcf.out.vcf, params.vep_fasta, 'hg19', vep_sequence_modes.reference)
@@ -88,14 +95,17 @@ workflow {
     writeVepRefseqNomenclatureToCsv(runVepRefseq.out.vep_output, 'refseq')
     writeVepHg19NomenclatureToCsv(runVepHg19.out.vep_output, 'hg19')
 
+    def tfx_nomenclature = channel.empty()
+    if (params.variant_source == 'tfx') {
+        tfx_nomenclature = writeTfxNomenclatureToCsv(params.variant_source_file)
+    }
+
     // Compare hgvs and annovar, join hgvs, annovar, and gaps file into final output
     joinAndCompare(ch_variants, 
-                   writeHgvsNomenclatureToCsv.out.hgvs_nomenclature,
+                   hgvs_nomenclature.ifEmpty([]),
                    writeAnnovarNomenclatureToCsv.out.annovar_nomenclature,
                    writeSnpEffNomenclatureToCsv.out.snpeff_nomenclature,
-                   writeMutalyzerNomenclatureToCsv.out.mutalyzer_nomenclature,
                    writeVepRefseqNomenclatureToCsv.out.vep_nomenclature,
-                   writeVepHg19NomenclatureToCsv.out.vep_nomenclature)
-
-    find_missing_mutalyzer_variants(joinAndCompare.out.nomenclature_all_transcripts_all_fields, params.mutilizer_cache)
+                   writeVepHg19NomenclatureToCsv.out.vep_nomenclature,
+                   tfx_nomenclature.ifEmpty([]))
 }
