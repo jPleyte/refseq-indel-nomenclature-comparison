@@ -20,7 +20,7 @@ def get_variants(variants_file: str):
                                   int(row['position']),
                                   row['reference'],
                                   row['alt'],
-                                  row['cdna_transcript'])
+                                  None)
             if 'g_dot' in row:
                 v.g_dot = row['g_dot']
                               
@@ -33,14 +33,14 @@ def write_variants(out_filename: str, variants: list[VariantTranscript]):
     """
     Write variants to csv file
     """
-    headers = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript', 'g_dot']
+    headers = ['chromosome', 'position', 'reference', 'alt']
     
     with open(out_filename, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(headers)
         
         for v in variants: 
-            writer.writerow([v.chromosome, v.position, v.reference, v.alt, v.cdna_transcript, v.g_dot])
+            writer.writerow([v.chromosome, v.position, v.reference, v.alt])  
 
         
 def write_variant_transcripts(out_filename: str, variants: list[VariantTranscript], additional_fields=[], field_suffix=""):

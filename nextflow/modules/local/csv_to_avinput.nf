@@ -14,7 +14,7 @@ process csvToAvinput {
 
     script:
     """
-    python -m rinc.etl.csv_to_avinput \
+    python -m rinc.annovar.csv_to_avinput \
            --in ${variant_csv_file} \
            --out annovar.avinput
     """

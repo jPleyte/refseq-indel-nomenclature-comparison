@@ -14,7 +14,7 @@ process writeAnnovarNomenclatureToCsv {
 
     script:
     """
-    python -m rinc.etl.annovar_multianno \
+    python -m rinc.annovar.parse_annovar_multianno \
            --annovar_multianno ${multianno} \
            --out annovar_nomenclature.csv
     """

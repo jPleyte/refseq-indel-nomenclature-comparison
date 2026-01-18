@@ -34,6 +34,7 @@ process runVep {
     --assembly GRCh37              \
     --hgvs                         \
     --hgvsg                        \
+    --ccds                         \
     --symbol                       \
     --numbers                      \
     --biotype                      \

@@ -10,20 +10,20 @@ process runAnnovar {
     path annovar_avinput
     
     output:
-    path "annovar.hg19_multianno.csv", emit: multianno
+    path "annovar.hg19_multianno.txt", emit: multianno
     
     script:
+
     """    
     \$ANNOVAR_HOME/table_annovar.pl ${annovar_avinput} \
     \$ANNOVAR_HOME/humandb/ \
     --buildver hg19 \
     --out annovar \
-    --protocol refGeneWithVer \
-    --operation g \
+    --protocol refGeneWithVer,ccdsGene \
+    --operation g,g \
     --nastring . \
     --polish \
-    --csvout \
     --remove \
-    --argument '--splicing_threshold 5 --exonicsplicing --transcript_function --separate'
+    --argument '--splicing_threshold 5 --exonicsplicing --transcript_function --separate,--splicing_threshold 5 --exonicsplicing --transcript_function --separate'
     """
 }

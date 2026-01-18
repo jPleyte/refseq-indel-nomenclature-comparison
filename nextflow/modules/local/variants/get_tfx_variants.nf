@@ -16,8 +16,7 @@ process getTfxVariants {
     """
     python -m rinc.tfx.tfx_to_variants_csv \
            --in ${tfx_json} \
-           --out variants.csv \
-           --no_ccds
+           --out variants.csv
     """
 
 }
