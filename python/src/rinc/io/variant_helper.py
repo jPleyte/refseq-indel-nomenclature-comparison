@@ -28,18 +28,40 @@ def get_variants(variants_file: str):
 
     return variants
 
+def _get_unique_varaint_transcripts(variants: list[VariantTranscript]) -> list[VariantTranscript]:
+    """
+    Remove duplicates form a list of variant transcripts
+    """
+    return _get_unique_variants(variants, transcripts=True)
+    
+def _get_unique_variants(variants: list[VariantTranscript], transcripts=False):
+    """
+    Remove duplicates from list of variants    
+    """
+    if transcripts:
+        key_maker = lambda x: f"{x.chromosome}-{x.position}-{x.reference}-{x.alt}-{x.cdna_transcript}"
+    else:
+        key_maker = lambda x: f"{x.chromosome}-{x.position}-{x.reference}-{x.alt}"
+        
+    variants_map = {key_maker(obj): obj for obj in variants}
+    return variants_map.values()
 
+    logging.info(f"Removed {len(variants)-len(variants_map)} duplicates")
+    
+    
 def write_variants(out_filename: str, variants: list[VariantTranscript]):
     """
     Write variants to csv file
     """
     headers = ['chromosome', 'position', 'reference', 'alt']
     
+    unique_variants = _get_unique_variants(variants)
+    
     with open(out_filename, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(headers)
         
-        for v in variants: 
+        for v in unique_variants: 
             writer.writerow([v.chromosome, v.position, v.reference, v.alt])  
 
         

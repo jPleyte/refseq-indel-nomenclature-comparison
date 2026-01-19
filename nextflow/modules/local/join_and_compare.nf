@@ -11,10 +11,10 @@ process joinAndCompare {
     path hgvs_nomenclature    
     path annovar_nomenclature    
     path snpeff_nomenclature
-    // path mutalyzer_nomenclature
     path vep_refseq_nomenclautre
     path vep_hg19_nomenclature
     path tfx_nomenclature
+    path cgd_nomenclature
 
     output:
     path "nomenclature_all_transcripts_all_fields.csv", emit: nomenclature_all_transcripts_all_fields
@@ -22,11 +22,14 @@ process joinAndCompare {
     script:
     def tfx_nomenclature_arg = tfx_nomenclature ? "--tfx_nomenclature $tfx_nomenclature" : ""
     def hgvs_nomenclature_arg = hgvs_nomenclature ? "--hgvs_nomenclature $hgvs_nomenclature" : ""
+    def cgd_nomenclature_arg = cgd_nomenclature ? "--cgd_nomenclature $cgd_nomenclature" : ""
+
     """
     python -m rinc.join_and_compare \
         --variants ${variants} \
         ${hgvs_nomenclature_arg} \
         ${tfx_nomenclature_arg} \
+        ${cgd_nomenclature_arg} \
         --annovar_nomenclature ${annovar_nomenclature} \
         --snpeff_nomenclature ${snpeff_nomenclature} \
         --vep_refseq_nomenclautre ${vep_refseq_nomenclautre} \

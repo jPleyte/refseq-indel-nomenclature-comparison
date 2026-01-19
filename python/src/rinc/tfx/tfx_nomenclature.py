@@ -63,10 +63,6 @@ class TfxNomenclature(object):
                 count['skip_no_transcript'] += 1
                 self._logger.info(f"Skipping variant that doesn't have transcripts: {x['chromosome']}-{x['position']}-{x['reference']}-{x['alt']}-{x['cdnaTranscript']}")
                 continue
-            elif x['cdnaTranscript'].startswith('CCDS'):
-                count['skip_ccds_transcript'] += 1
-                #self._logger.debug(f"Skipping CCDS transcript: {x['chromosome']}-{x['position']}-{x['reference']}-{x['alt']}-{x['cdnaTranscript']}")
-                continue
                         
             v = self._get_variant_transcript(x)            
             variant_transcripts.append(v)
@@ -101,4 +97,3 @@ def main():
     
 if __name__ == '__main__':
     main()                
-        

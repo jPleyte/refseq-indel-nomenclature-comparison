@@ -16,7 +16,7 @@ include { runVep as runVepHg19 } from './modules/local/run_vep.nf'
 include { writeVepNomenclatureToCsv as writeVepRefseqNomenclatureToCsv } from './modules/local/write_vep_nomenclature_to_csv.nf'
 include { writeVepNomenclatureToCsv as writeVepHg19NomenclatureToCsv } from './modules/local/write_vep_nomenclature_to_csv.nf'
 include { writeTfxNomenclatureToCsv } from './modules/local/write_tfx_nomenclature_to_csv.nf'
-
+include { writeCgdNomenclatureToCsv } from './modules/local/write_cgd_nomenclature_to_csv.nf'
 include { joinAndCompare } from './modules/local/join_and_compare.nf'
 
 workflow {
@@ -53,9 +53,6 @@ workflow {
     }
     else if (params.variant_source == 'tfx') {
         ch_variants = getTfxVariants(params.variant_source_file)
-    }
-    else if (params.variant_source == 'cgd') {
-        error "CGD variant source not yet implemented"
     }
     else {
         error "Unknown variant source: ${params.variant_source}"
@@ -100,6 +97,11 @@ workflow {
         tfx_nomenclature = writeTfxNomenclatureToCsv(params.variant_source_file)
     }
 
+    def cgd_nomenclature = channel.empty()
+    if (params.cgd_export_csv != null) {
+        cgd_nomenclature = writeCgdNomenclatureToCsv(ch_variants)
+    }
+
     // Compare hgvs and annovar, join hgvs, annovar, and gaps file into final output
     joinAndCompare(ch_variants, 
                    hgvs_nomenclature.ifEmpty([]),
@@ -107,5 +109,6 @@ workflow {
                    writeSnpEffNomenclatureToCsv.out.snpeff_nomenclature,
                    writeVepRefseqNomenclatureToCsv.out.vep_nomenclature,
                    writeVepHg19NomenclatureToCsv.out.vep_nomenclature,
-                   tfx_nomenclature.ifEmpty([]))
+                   tfx_nomenclature.ifEmpty([]),
+                   cgd_nomenclature.ifEmpty([]))
 }

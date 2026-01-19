@@ -16,6 +16,7 @@ from rinc.util.pdot import PDot
 import csv
 import re
 import urllib
+from rinc.io import variant_helper
 
 class VepNomenclature(object):
     '''
@@ -52,9 +53,16 @@ class VepNomenclature(object):
         """
         Return the variant and transcript parts. Pulls values from multiple fields and compares them to make sure they all match
         """
-        transcript = row['Feature']
-        chromosome, position, reference, alt = self._get_variant_values_from_gdot(row['#Uploaded_variation'])
+        if row['SOURCE'] == 'RefSeq':            
+            transcript = row['Feature']            
+        elif row['SOURCE'] == 'Ensembl' and row['CCDS'] != '-':
+            transcript = row['CCDS']
+        elif row['SOURCE'] == 'Ensembl' and row['Feature'].startswith('ENST'):
+            transcript = row['Feature']
+        else:
+            raise ValueError(f"Unknown feature type: Source={row['SOURCE']}, Feature={row['Feature']}, CCDS={row['CCDS']}")
         
+        chromosome, position, reference, alt = self._get_variant_values_from_gdot(row['#Uploaded_variation'])
         return chromosome, position, reference, alt, transcript
     
     def _get_variant_values_from_gdot(self, uploaded_variation: str):
@@ -77,7 +85,7 @@ class VepNomenclature(object):
 
         transcript, c_dot = row['HGVSc'].split(':')
         
-        if transcript != row['Feature']:
+        if transcript.startswith('NM') and transcript != row['Feature']:
             raise ValueError(f"c. transcript does not match Feature: {transcript} != {row['Feature']}")
         elif not c_dot.startswith('c.'):
             raise ValueError(f"c. does not start with c.: {row['HGVSc']}")
@@ -219,7 +227,7 @@ class VepNomenclature(object):
         # VEP uses "%3D" instead of "="
         p_dot3 = urllib.parse.unquote(p_dot3_raw)
         
-        if not protein_transcript.startswith("NP"):
+        if row['SOURCE'] == 'RefSeq' and not protein_transcript.startswith("NP"):
             raise ValueError(f"Protein transcript does not start with NP: {row['HGVSp']}")
         elif not p_dot3.startswith("p."):
             raise ValueError(f"p. does not start with p.: {row['HGVSp']}")
@@ -243,7 +251,6 @@ class VepNomenclature(object):
         
         return value.split('/')[0]
     
-        
     def get_variant_transcripts(self) -> list[VariantTranscript]:
         """
         Parse the VEP dataframe        
@@ -251,15 +258,17 @@ class VepNomenclature(object):
         transcript_counter = Counter()
         variant_transcripts = []
         
-        transcript_counter['skipped_non_refseq_source'] = self._vep_df[self._vep_df['SOURCE'] != 'RefSeq'].shape[0]
-        
-        refseq_df = self._vep_df[self._vep_df['SOURCE'] == 'RefSeq']
-        for index, row in refseq_df.iterrows():
+        for index, row in self._vep_df.iterrows():
             chromosome, position, reference, alt, transcript = self._get_variant_values(row)
-            if not transcript.startswith('NM'):
-                transcript_counter['skipped_non_nm_transcript']
+
+            if transcript.startswith('NR'):
+                transcript_counter['skipped_NR_transcript']
                 continue
-             
+            elif transcript.startswith('ENST'):
+                transcript_counter['skipped_ENST_transcript']
+                continue
+            
+                         
             vt = VariantTranscript(chromosome, position, reference, alt, transcript)
             vt.c_dot = self._get_c_dot(row)
             vt.g_dot = self._get_g_dot(row)
@@ -310,7 +319,9 @@ class VepNomenclature(object):
             writer = csv.writer(output)
             writer.writerow(headers)
 
-            for v in variant_transcripts:
+            unique_variant_transcripts = variant_helper._get_unique_varaint_transcripts(variant_transcripts)
+            
+            for v in unique_variant_transcripts:
                 row = [v.chromosome, v.position, v.reference, v.alt, 
                        v.cdna_transcript, v.protein_transcript, 
                        v.exon, v.gene, v.genomic_region_type, v.protein_variant_type,

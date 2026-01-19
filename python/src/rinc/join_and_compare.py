@@ -20,7 +20,7 @@ class NomenclatureTools(Enum):
     TFX = "tfx"
     ANNOVAR = "annovar"
     SNPEFF = "snpeff"
-    MUTALYZER = "mutalyzer"
+    CGD = "cgd"
     VEP_REFSEQ = "vep_refseq"
     VEP_HG19 = "vep_hg19"
 
@@ -252,12 +252,7 @@ class JoinAndCompare(object):
         if len(g_dots) > 1:
             self._logger.info(f"Variant g. don't match for {chromosome}-{position}-{reference}-{alt}")
             interest_codes.append('gdot_mismatch') 
-        
-        # Is the Mutalyzer status equal to Failed? That usually means out c. doesn't match the reference
-        mut_row = self._get_row(NomenclatureTools.MUTALYZER, rows)
-        if mut_row is not None and mut_row['mut.status'].item() != 'Success':
-            interest_codes.append('mut_status_failed')
-             
+                     
         # In the VEP refseq comparison do GIVEN_REF and USED_REF  match?
         vep_refseq_row = self._get_row(NomenclatureTools.VEP_REFSEQ, rows)
         if vep_refseq_row is not None and vep_refseq_row['vep.refseq.GIVEN_REF'].item() != vep_refseq_row['vep.refseq.USED_REF'].item():
@@ -365,10 +360,10 @@ def _parse_args():
     
     parser.add_argument('--hgvs_nomenclature', help='hgvs/uta values (csv)', required=False)
     parser.add_argument('--tfx_nomenclature', help="Optional Transcript Effect/tfx values (csv)", required=False)
+    parser.add_argument('--cgd_nomenclature', help='CGD values (csv)', required=False)
     
     parser.add_argument('--annovar_nomenclature', help='Annovar values (csv)', required=True)    
-    parser.add_argument('--snpeff_nomenclature', help='SnpEff values (csv)', required=True)
-    # parser.add_argument('--mutalyzer_nomenclature', help='mutalyzer values (csv)', required=True)
+    parser.add_argument('--snpeff_nomenclature', help='SnpEff values (csv)', required=True)    
     parser.add_argument('--vep_refseq_nomenclautre', help='mutalyzer values (csv)', required=True)
     parser.add_argument('--vep_hg19_nomenclature', help='mutalyzer values (csv)', required=True)
     
@@ -393,11 +388,12 @@ def main():
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.HGVS, args.hgvs_nomenclature))
     if args.tfx_nomenclature:
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.TFX, args.tfx_nomenclature))
+    if args.cgd_nomenclature:
+        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.CGD, args.cgd_nomenclature))
         
     # In the future i will make this optional but for now they're always being generated 
     dataframes.append(jc.get_nomenclature_df(NomenclatureTools.ANNOVAR, args.annovar_nomenclature))    
-    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.SNPEFF, args.snpeff_nomenclature))    
-    # dataframes.append(jc.get_nomenclature_df(NomenclatureTools.MUTALYZER, args.mutalyzer_nomenclature))    
+    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.SNPEFF, args.snpeff_nomenclature))        
     dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_REFSEQ, args.vep_refseq_nomenclautre))    
     dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_HG19, args.vep_hg19_nomenclature))
     

@@ -5,6 +5,10 @@
     "description": "This pipeline uses Nextflow to generate and compare c. and p. nomenclature from multiple sources",
     "type": "object",
     "properties": {
+        "cgd_export_csv": {
+            "type": "string",
+            "description": "Nomenclature exported from CGD"
+        },
         "vep_fasta": {
             "type": "string",
             "description": "Vep fasta file"
