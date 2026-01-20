@@ -7,6 +7,7 @@ process writeTfxNomenclatureToCsv {
     publishDir "${params.outdir}", mode: 'symlink'
 
     input:
+    path fasta
     path tfx_variants_file
 
     output:
@@ -15,6 +16,7 @@ process writeTfxNomenclatureToCsv {
     script:
     """
     python -m rinc.tfx.tfx_nomenclature \
+        --fasta ${fasta} \
         --tfx_input ${tfx_variants_file} \
         --out tfx_nomenclature.csv
     """

@@ -8,7 +8,7 @@ process writeAnnovarNomenclatureToCsv {
 
     input:
     path multianno
-    
+
     output:
     path "annovar_nomenclature.csv", emit: annovar_nomenclature
 

@@ -235,24 +235,6 @@ class Deletion(HGVSNomenclature):
             # Multi-base deletion (e.g., pos+1_pos+3 del ATG)
             return f"{self.del_start}_{self.del_end}del"
 
-
-# def _get_gdot(chrom: str, pos: int, ref: str, alt: str, pysam_tx: PysamTxEff):
-#     """
-#     Returns a g.dot but i don't recommend using this method  
-#     """
-#     # Set mapping between variant types and classes
-#     vrnt_type_map = {'del': Deletion,
-#                      'delins': Indel,
-#                      'dup': Duplication,
-#                      'ins': Insertion,
-#                      'inv': Inversion,
-#                      'sub': Substitution
-#                      }
-#
-#     vrnt_type = HGVSNomenclature(chrom, pos, ref, alt, pysam_tx).get_variant_type()
-#     gdot = vrnt_type_map[vrnt_type](chrom, pos, ref, alt, pysam_tx).get_hgvs_coord()
-#     return gdot
-
 def get_gdot_plus(chrom: str, pos: int, ref: str, alt: str, pysam_tx: PysamTxEff) -> (str,str):
     """
     Returns g_dot and the variant type
@@ -269,7 +251,6 @@ def get_gdot_plus(chrom: str, pos: int, ref: str, alt: str, pysam_tx: PysamTxEff
 
     vrnt_type = HGVSNomenclature(chrom, pos, ref, alt, pysam_tx).get_variant_type()
     g_dot_part = vrnt_type_map[vrnt_type](chrom, pos, ref, alt, pysam_tx).get_hgvs_coord()
-
     refseq_chromosome = chromosome_map.get_refseq(chrom)
     
     g_dot_full = refseq_chromosome + ':g.' + g_dot_part

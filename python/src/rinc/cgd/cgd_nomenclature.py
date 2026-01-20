@@ -9,6 +9,7 @@ from rinc.io import variant_helper
 from rinc.util.log_config import LogConfig
 import pandas as pd
 from rinc.variant_transcript import VariantTranscript
+import csv
 
 class CgdNomenclature(object):
     '''
@@ -77,8 +78,39 @@ class CgdNomenclature(object):
     def write(self, out_filename, variant_transcripts: list[VariantTranscript]):
         """
         Write variant transcripts to csv 
+        Doesn't include g_dot because CGD doesn't have g_dot
         """
-        variant_helper.write_variant_transcripts(out_filename, variant_transcripts, [], 'cgd')
+        # variant_helper.write_variant_transcripts(out_filename, variant_transcripts, [], 'cgd')
+        key_headers = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript' ] 
+        nomenclature_headers = ['c_dot', 'exon', 'gene', 'p_dot1', 'p_dot3', 'protein_transcript', 'protein_variant_type', 'splicing']
+    
+        # Caller can spcify that columns not be included (eg Annovar never has p_dot3 or protein transcript)
+        suffixed_headers = [x + "." + 'cgd' for x in nomenclature_headers]
+        all_headers = key_headers + suffixed_headers 
+    
+        rows = 0
+        with open(out_filename, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(all_headers)
+            
+            for v in variant_transcripts:
+                rows += 1
+                row = [v.chromosome,
+                       v.position,
+                       v.reference,
+                       v.alt,
+                       v.cdna_transcript,
+                       v.c_dot,
+                       v.exon,
+                       v.gene,
+                       v.p_dot1,
+                       v.p_dot3,
+                       v.protein_transcript,
+                       v.protein_variant_type,
+                       v.additional_fields['splicing']]
+                
+                writer.writerow(row)
+        
         self._logger.info(f"Wrote {len(variant_transcripts)} variant transcripts to {out_filename}")
 
 def _parse_args():

@@ -70,9 +70,9 @@ def write_variant_transcripts(out_filename: str, variants: list[VariantTranscrip
     Write a list of VariantTranscript to csv 
     Each field label will have the field_suffix appended to it
     """
-    
     key_headers = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript' ] 
     nomenclature_headers = ['c_dot', 'exon', 'g_dot', 'gene', 'genomic_region_type', 'p_dot1', 'p_dot3', 'protein_transcript', 'protein_variant_type']
+    
     nomenclature_headers.extend(additional_fields)
     suffixed_headers = [x + "." + field_suffix for x in nomenclature_headers]
     all_headers = key_headers + suffixed_headers 

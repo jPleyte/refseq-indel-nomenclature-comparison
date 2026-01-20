@@ -4,7 +4,9 @@
 sudo apt-get update
 sudo apt-get install -y samtools perl wget tabix libpq-dev awscli
 
-/opt/conda/bin/pip install psycopg2-binary hgvs pysam biopython pandas
+
+/opt/conda/bin/pip install psycopg2-binary hgvs pysam biopython pandas openpyxl natsort
+
 
 mkdir -p data
 
@@ -50,3 +52,8 @@ EOF
 # mv snpEff "/workspaces/$(basename $CONTAINER_WORKSPACE_FOLDER)/
 # cd /workspaces/$(basename $CONTAINER_WORKSPACE_FOLDER)/
 # java -jar snpEff.jar download GRCh37.p13
+
+echo "You still need to do the following:"
+echo "- Install VEP"
+echo "- Install SnpEff"
+echo "- Run 'conda install openssl certifi openpyxl'"

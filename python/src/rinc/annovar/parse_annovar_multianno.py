@@ -36,7 +36,6 @@ import logging.config
 from rinc.util.log_config import LogConfig
 from rinc.variant_transcript import VariantTranscript
 import re
-from rinc.io import variant_helper
 
 class AnnovarMultianno(object):
     '''
@@ -197,12 +196,26 @@ class AnnovarMultianno(object):
         v.c_dot = self._get_normalized_c_dot(c_dot)
         v.exon = exon.replace('exon', '')
         v.gene = gene
-        v.p_dot1 = p_dot
+        v.p_dot1 = self._get_normalized_p_dot1(p_dot)        
         v.protein_variant_type = exonic_func
+        
         v.additional_fields['splicing'] = is_splice_site
+        v.additional_fields['p_raw_dot1'] = p_dot
         
         return v
 
+    def _get_normalized_p_dot1(self, p_dot_raw: str) -> str:
+        """
+        """
+        if not p_dot_raw:
+            return None
+        
+        normalized = re.sub(r'(\b|(?<=\w))X', '*', p_dot_raw)
+        if normalized != p_dot_raw:
+            self._logger.info(f"Noramalized annovar pDot1 from {p_dot_raw} to {normalized}")
+        return normalized
+        
+        
     def _get_normalized_c_dot(self, c_dot_raw) -> str:
         """
         Attempt to normalize annovar's c.
@@ -221,10 +234,38 @@ class AnnovarMultianno(object):
     
     def write(self, output_file, variant_transcripts: list[VariantTranscript]):
         """
+        Write file.
+        Doesn't include g_dot or proteni transcript because annovar doesn't have them
         """
-        variant_helper.write_variant_transcripts(output_file, variant_transcripts, ['splicing'], 'annovar')
-        self._logger.info(f"Wrote {len(variant_transcripts)} variant transcripts to {output_file}")
+        key_headers = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript' ] 
+        nomenclature_headers = ['c_dot', 'exon', 'gene', 'p_dot1', 'protein_variant_type', 'splicing']
+    
+        # Caller can spcify that columns not be included (eg Annovar never has p_dot3 or protein transcript)
+        suffixed_headers = [x + "." + 'annovar' for x in nomenclature_headers]
+        all_headers = key_headers + suffixed_headers 
+    
+        rows = 0
+        with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(all_headers)
+            
+            for v in variant_transcripts:
+                rows += 1 
+                row = [v.chromosome,
+                       v.position,
+                       v.reference,
+                       v.alt,
+                       v.cdna_transcript,
+                       v.c_dot,
+                       v.exon,
+                       v.gene,
+                       v.p_dot1,
+                       v.protein_variant_type,
+                       v.additional_fields['splicing']]
+                
+                writer.writerow(row)
         
+        self._logger.info(f"Wrote {len(variant_transcripts)} to {output_file}")
         
 def _parse_args():
     parser = argparse.ArgumentParser(description='Read Annovar multianno file, extract refseq and ccds transcripts and write to new csv')
@@ -249,8 +290,6 @@ def main():
     variant_transcripts = am.get_variant_transcripts(args.annovar_multianno)
 
     am.write(args.out, variant_transcripts)
-
-    
 
 
 if __name__ == '__main__':

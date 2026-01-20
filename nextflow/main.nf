@@ -18,6 +18,7 @@ include { writeVepNomenclatureToCsv as writeVepHg19NomenclatureToCsv } from './m
 include { writeTfxNomenclatureToCsv } from './modules/local/write_tfx_nomenclature_to_csv.nf'
 include { writeCgdNomenclatureToCsv } from './modules/local/write_cgd_nomenclature_to_csv.nf'
 include { joinAndCompare } from './modules/local/join_and_compare.nf'
+include { performAnalysis } from './modules/local/perform_analysis.nf'
 
 workflow {
     main:
@@ -94,7 +95,7 @@ workflow {
 
     def tfx_nomenclature = channel.empty()
     if (params.variant_source == 'tfx') {
-        tfx_nomenclature = writeTfxNomenclatureToCsv(params.variant_source_file)
+        tfx_nomenclature = writeTfxNomenclatureToCsv(fasta_ch, params.variant_source_file)
     }
 
     def cgd_nomenclature = channel.empty()
@@ -111,4 +112,12 @@ workflow {
                    writeVepHg19NomenclatureToCsv.out.vep_nomenclature,
                    tfx_nomenclature.ifEmpty([]),
                    cgd_nomenclature.ifEmpty([]))
+
+    performAnalysis(hgvs_nomenclature.ifEmpty([]),
+                    writeAnnovarNomenclatureToCsv.out.annovar_nomenclature,
+                    writeSnpEffNomenclatureToCsv.out.snpeff_nomenclature,
+                    writeVepRefseqNomenclatureToCsv.out.vep_nomenclature,
+                    writeVepHg19NomenclatureToCsv.out.vep_nomenclature,
+                    tfx_nomenclature.ifEmpty([]),
+                    cgd_nomenclature.ifEmpty([]))
 }
