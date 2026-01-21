@@ -206,13 +206,22 @@ class AnnovarMultianno(object):
 
     def _get_normalized_p_dot1(self, p_dot_raw: str) -> str:
         """
+        Normalize annovar's p.
+        1) Convert X to *
+        2) Use = instead of bases for equality (eg p.T73= rather than p.T73T)
         """
         if not p_dot_raw:
             return None
         
+        # Convert X to * 
         normalized = re.sub(r'(\b|(?<=\w))X', '*', p_dot_raw)
+        
+        # Convert p.T73T to p.T73=
+        pattern = r'^p\.([A-Z*])(\d+)\1$'
+        normalized = re.sub(pattern, r'p.\1\2=', normalized)
+        
         if normalized != p_dot_raw:
-            self._logger.info(f"Noramalized annovar pDot1 from {p_dot_raw} to {normalized}")
+            self._logger.info(f"Normalized annovar pDot1 from {p_dot_raw} to {normalized}")
         return normalized
         
         

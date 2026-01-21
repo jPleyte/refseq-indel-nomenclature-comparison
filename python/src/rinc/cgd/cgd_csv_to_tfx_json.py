@@ -1,5 +1,5 @@
 '''
-Convert a CGD export of variants and transcript nomenclature and write out a list of variants 
+Read CGD export of variants and transcript nomenclature and write out a list of variants 
 
 Created on Jan 18, 2026
 
@@ -60,4 +60,4 @@ def main():
     cgd_to_tfx.write(args.output, variants)
     
 if __name__ == '__main__':
-    main()                
+    main()
