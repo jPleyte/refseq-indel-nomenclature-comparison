@@ -1,4 +1,7 @@
 '''
+Lookup variants in a saved export from the CGD database and write out all the variant
+transcripts and nomenclature. 
+
 Created on Jan 16, 2026
 
 @author: pleyte
@@ -10,18 +13,18 @@ from rinc.util.log_config import LogConfig
 import pandas as pd
 from rinc.variant_transcript import VariantTranscript
 import csv
+from rinc.cgd.variant_nomenclature_db import VariantNomenclatureDatabase
 
 class CgdNomenclature(object):
     '''
     classdocs
     '''
-    def __init__(self, cgd_nomenclature_csv: str):
+    def __init__(self, cgd_db_file: str):
         '''
         Constructor
         '''
         self._logger = logging.getLogger(__name__)
-        self._cgd_df = pd.read_csv(cgd_nomenclature_csv, dtype=str)
-        self._logger.info(f"Read {self._cgd_df.shape[0]} variant transcripts from cgd file {cgd_nomenclature_csv}")
+        self._cgd_db = VariantNomenclatureDatabase(cgd_db_file)
     
     def get_variants(self, variants_csv: str):
         """
@@ -33,20 +36,15 @@ class CgdNomenclature(object):
 
     def _get_cgd_transcripts(self, v:VariantTranscript):
         """
+        Return cgd transcripts for a variant 
         """
-        chromosome = "chr"+ v.chromosome
-            
-        matching_variant_df = self._cgd_df[(self._cgd_df['chromosome'] == chromosome) & 
-                                           (self._cgd_df['position_start'] == str(v.position)) &
-                                           (self._cgd_df['reference_base'] == v.reference) &
-                                           (self._cgd_df['variant_base'] == v.alt)]
-        
-        return matching_variant_df
+        return self._cgd_db.get_variant_transcripts(v.chromosome, v.position, v.reference, v.alt)
+
     
     def _get_cgd_to_variant_transcript(self, row):
         """
         Convert a CGD export row to a VariantTranscript object
-        """
+        """            
         chromosome = row['chromosome'].replace('chr', '')
         
         vt = VariantTranscript(chromosome, row['position_start'], row['reference_base'], row['variant_base'], row['cdna_transcript'])
@@ -70,7 +68,7 @@ class CgdNomenclature(object):
         for v in variants:
             cgg_transcripts_df = self._get_cgd_transcripts(v)
             if not cgg_transcripts_df.empty:
-                for index, row in cgg_transcripts_df.iterrows():
+                for _, row in cgg_transcripts_df.iterrows():
                     variant_transcripts.append(self._get_cgd_to_variant_transcript(row))
         
         return variant_transcripts
@@ -116,7 +114,7 @@ class CgdNomenclature(object):
 def _parse_args():
     parser = argparse.ArgumentParser(description='Use hgvs to determine protein changes for a list of variants')
     parser.add_argument("--version", action="version", version="0.0.1")
-    parser.add_argument("--cgd_db", help="File with variants and nomenclature exported from CGD (csv)", required=True)
+    parser.add_argument("--cgd_db", help="File with variants and nomenclature exported from CGD (parquet)", required=True)
     parser.add_argument("--variants_input", help="Variant list", required=True)
     parser.add_argument("--out", help="CGD nomenclature output file (csv)", dest="output", required=True)
     args = parser.parse_args()

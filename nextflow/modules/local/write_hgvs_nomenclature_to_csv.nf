@@ -15,7 +15,7 @@ process writeHgvsNomenclatureToCsv {
 
     script:
     """
-    python -m rinc.hgvs_nomenclature \
+    python -m rinc.hgvs_uta.hgvs_nomenclature \
            --fasta ${fasta} \
            --variants ${variants} \
            --out hgvs_nomenclature.csv

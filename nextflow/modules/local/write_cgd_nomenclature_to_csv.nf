@@ -7,6 +7,7 @@ process writeCgdNomenclatureToCsv {
     publishDir "${params.outdir}", mode: 'symlink'
 
     input:
+    path cgd_export_db
     path variants_csv
     
     output:
@@ -15,7 +16,7 @@ process writeCgdNomenclatureToCsv {
     script:
     """
     python -m rinc.cgd.cgd_nomenclature \
-           --cgd_db ${params.cgd_export_csv} \
+           --cgd_db ${cgd_export_db} \
            --variants_input ${variants_csv} \
            --out cgd_nomenclature.csv
     """

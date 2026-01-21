@@ -66,7 +66,6 @@ workflow {
         hgvs_nomenclature = writeHgvsNomenclatureToCsv(fasta_ch, ch_variants)
      }
     
-
     // Convert variant list to annovar avinput file 
     csvToAvinput(ch_variants)
 
@@ -99,8 +98,8 @@ workflow {
     }
 
     def cgd_nomenclature = channel.empty()
-    if (params.cgd_export_csv != null) {
-        cgd_nomenclature = writeCgdNomenclatureToCsv(ch_variants)
+    if (params.cgd_export_db != null) {
+        cgd_nomenclature = writeCgdNomenclatureToCsv(params.cgd_export_db, ch_variants)
     }
 
     // Compare hgvs and annovar, join hgvs, annovar, and gaps file into final output

@@ -238,7 +238,7 @@ class AnnovarMultianno(object):
         Doesn't include g_dot or proteni transcript because annovar doesn't have them
         """
         key_headers = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript' ] 
-        nomenclature_headers = ['c_dot', 'exon', 'gene', 'p_dot1', 'protein_variant_type', 'splicing']
+        nomenclature_headers = ['c_dot', 'exon', 'gene', 'p_dot1', 'protein_variant_type', 'splicing', 'p_raw_dot1']
     
         # Caller can spcify that columns not be included (eg Annovar never has p_dot3 or protein transcript)
         suffixed_headers = [x + "." + 'annovar' for x in nomenclature_headers]
@@ -261,8 +261,10 @@ class AnnovarMultianno(object):
                        v.gene,
                        v.p_dot1,
                        v.protein_variant_type,
-                       v.additional_fields['splicing']]
-                
+                       v.additional_fields['splicing'],
+                       v.additional_fields['p_raw_dot1'] if 'p_raw_dot1' in v.additional_fields else None 
+                       ]
+
                 writer.writerow(row)
         
         self._logger.info(f"Wrote {len(variant_transcripts)} to {output_file}")

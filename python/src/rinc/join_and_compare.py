@@ -33,7 +33,7 @@ class JoinAndCompare(object):
         Constructor
         '''
         self._logger = logging.getLogger(__name__)
-        
+                
     def _get_all_variant_transcripts(self, dataframes: list[pd.DataFrame]) -> list[VariantTranscript]:
         """
         Return a list of every variant transcript in all of the dataframes 
@@ -45,7 +45,7 @@ class JoinAndCompare(object):
         variant_transcripts = []
         for row in merged_df[['chromosome', 'position', 'reference', 'alt', 'cdna_transcript']].itertuples(index=False):
             variant_transcripts.append(VariantTranscript(row.chromosome, row.position, row.reference, row.alt, row.cdna_transcript))
-            
+
         return variant_transcripts
     
     def get_nomenclature_df(self, nomenclature_tool: str, csv_file: str):
@@ -55,6 +55,9 @@ class JoinAndCompare(object):
         """
         df = pd.read_csv(csv_file, dtype=str)
         df.attrs['nomenclature_tool'] = nomenclature_tool
+        df.attrs['field_c_dot'] = self._get_field_name('c_dot', df)
+        df.attrs['field_p_dot1'] = self._get_field_name('p_dot1', df)
+        df.attrs['field_exon'] = self._get_field_name('exon', df, optional=True)
         self._logger.info(f"Read {df.shape[0]} rows for {nomenclature_tool} from {csv_file}")
         return df
 
@@ -77,7 +80,6 @@ class JoinAndCompare(object):
         """
         Compare dataframes with each other and return a dataframe with comparison score         
         """
-        
         # These two lists of dict will be converted to datframes and then merged into one
         pairwise_comparisons = []
         is_of_interest = [] 
@@ -96,7 +98,7 @@ class JoinAndCompare(object):
             
             tool_transcript_counter = Counter()
             
-            # From each dataource fetch a row match the vairant and transcript  
+            # From each datasource fetch a row that matches the vairant and transcript  
             rows = []
             for df in dataframes:
                 row = self._get_variant_transcript_row(df, chromosome, position, reference, alt, cdna_transcript)
@@ -117,7 +119,7 @@ class JoinAndCompare(object):
             is_of_interest.append(self._get_is_of_interest(chromosome, position, reference, alt, cdna_transcript, rows))
             
             n = n + 1
-            if n % 10 == 0:
+            if n % 1000 == 0:
                 self._logger.info(f"Processed {n}/{total} transcripts")
 
         # Create dataframes from the dict objects 
@@ -134,19 +136,19 @@ class JoinAndCompare(object):
 
         return comparison_df
 
-    def _get_field_name(self, pattern, row: pd.DataFrame, optional=False):
+    def _get_field_name(self, pattern, df: pd.DataFrame, optional=False):
         """
         Return the name of the field that has c. in it
         """
         field_names = []
-        for x in row.columns:
+        for x in df.columns:
             if pattern in x:
                 field_names.append(x)
     
         if len(field_names) > 1: 
             raise ValueError(f"Multiple field names matching {pattern}: {field_names}")
         if not optional and not field_names:
-            raise ValueError(f"Unable to find field matching {pattern} in {row.attrs['nomenclature_tool']}")
+            raise ValueError(f"Unable to find field matching {pattern} in {df.attrs['nomenclature_tool']}")
         elif field_names:
             return field_names[0]
         else:
@@ -163,17 +165,16 @@ class JoinAndCompare(object):
                        'cdna_transcript': cdna_transcript}
 
         # c. values for comparison
-        c_dot_values = []
-        
+        c_dot_values = []        
         for row in rows:
             if not row.empty:
-                c_dot_values.append(row[self._get_field_name('c_dot', row)].item())
+                c_dot_values.append(row[row.attrs['field_c_dot']].item())
              
         # p. values for comparison        
         p_dot_values = []
         for row in rows:
             if not row.empty:
-                p_dot_values.append(row[self._get_field_name('p_dot1', row)].item())    
+                p_dot_values.append(row[row.attrs['field_p_dot1']].item())    
 
                      
         # exon vlaues for comparison
@@ -181,7 +182,7 @@ class JoinAndCompare(object):
         for row in rows:
             if not row.empty:
                 # Not all dataframes have an exon field
-                exon_field_name = self._get_field_name('exon', row, True)
+                exon_field_name = row.attrs['field_exon']
                 if exon_field_name:
                     exon_values.append(row[exon_field_name].item())
         
@@ -384,7 +385,7 @@ def main():
     dataframes = []
     
     # The hgvs and tfx dataframes are optional
-    if args.hgvs_nomenclature:        
+    if args.hgvs_nomenclature:
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.HGVS, args.hgvs_nomenclature))
     if args.tfx_nomenclature:
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.TFX, args.tfx_nomenclature))

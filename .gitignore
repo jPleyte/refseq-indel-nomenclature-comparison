@@ -215,7 +215,7 @@ data/Homo_sapiens_assembly*
 data/vep/*
 
 nextflow/work
-nextflow/results
+nextflow/results*
 nextflow/.nextflow
 nextflow/.nextflow.log.*
 
