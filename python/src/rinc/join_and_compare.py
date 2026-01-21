@@ -13,10 +13,12 @@ from itertools import combinations
 from rinc.variant_transcript import VariantTranscript
 from collections import Counter
 from enum import Enum
+import itertools
+import numpy as np
+from openpyxl.styles import Font
 
 class NomenclatureTools(Enum):
     HGVS = "hgvs"
-    VEP = "vep"
     TFX = "tfx"
     ANNOVAR = "annovar"
     SNPEFF = "snpeff"
@@ -48,16 +50,23 @@ class JoinAndCompare(object):
 
         return variant_transcripts
     
-    def get_nomenclature_df(self, nomenclature_tool: str, csv_file: str):
+    def get_nomenclature_df(self, nomenclature_tool: str, csv_file: str, remove_label: str):
         """
         Read a file containing variant transcript nomenclature.
         If the file doesn't exist then an empty dataframe is returned.
+        
+        The dataframe columns all have identifiers in the (eg tfx.exon or p_dot1.annovar) but they get in the way 
+        here so the `removelabel` string is removed from the columns. 
         """
         df = pd.read_csv(csv_file, dtype=str)
-        df.attrs['nomenclature_tool'] = nomenclature_tool
-        df.attrs['field_c_dot'] = self._get_field_name('c_dot', df)
-        df.attrs['field_p_dot1'] = self._get_field_name('p_dot1', df)
-        df.attrs['field_exon'] = self._get_field_name('exon', df, optional=True)
+        
+        index_cols = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript']
+        df.set_index(index_cols, inplace=True, drop=False)
+
+        df.columns = [x.replace(remove_label, '') for x in df.columns]
+        df.columns = pd.MultiIndex.from_product([[nomenclature_tool.value], df.columns])
+        
+        df.attrs['nomenclature_tool'] = nomenclature_tool.value
         self._logger.info(f"Read {df.shape[0]} rows for {nomenclature_tool} from {csv_file}")
         return df
 
@@ -75,67 +84,104 @@ class JoinAndCompare(object):
         df_row = df[create_mask(df, chromosome, position, reference, alt, cdna_transcript)]
         return df_row
 
+    def _get_merged_df(self, dataframes: list[pd.DataFrame]):
+        """
+        Merge all the dataframes into one. 
+        I don't want to inner join them all because that is very limiting.
+        I don't want to outter join them all because that will give me too much.  
+        So i inner join on certain high qualty sources like annovar, tfx, and vep
+        And then left join the others in.  
+               
+        If i wanted to inner join them all i would use: pd.concat(dataframes, axis=1, join='inner')
+          
+        """
+        inner_join_dfs = []  
+        outer_join_dfs = []
+        
+        for x in dataframes:
+            if x.attrs['nomenclature_tool'] == NomenclatureTools.HGVS.value:
+                outer_join_dfs.append(x)
+            elif x.attrs['nomenclature_tool'] == NomenclatureTools.ANNOVAR.value:
+                inner_join_dfs.append(x)
+            elif x.attrs['nomenclature_tool'] == NomenclatureTools.CGD.value:
+                outer_join_dfs.append(x)
+            elif x.attrs['nomenclature_tool'] == NomenclatureTools.SNPEFF.value:
+                outer_join_dfs.append(x)
+            elif x.attrs['nomenclature_tool'] == NomenclatureTools.TFX.value:
+                inner_join_dfs.append(x)
+            elif x.attrs['nomenclature_tool'] == NomenclatureTools.VEP_HG19.value:
+                inner_join_dfs.append(x)
+            elif x.attrs['nomenclature_tool'] == NomenclatureTools.VEP_REFSEQ.value:
+                inner_join_dfs.append(x)
+            else:
+                raise ValueError(f"Unknown tool: {x.attrs['nomenclature_tool']}")
+                
+        inner_df = pd.concat(inner_join_dfs, axis=1, join='inner')
+        
+        aux_df = pd.concat(outer_join_dfs, axis=1, join='outer')
+                
+        merged_df = inner_df.join(aux_df, how='left')
+        return merged_df    
         
     def get_comparison_df(self, dataframes: list[pd.DataFrame]):
         """
         Compare dataframes with each other and return a dataframe with comparison score         
         """
-        # These two lists of dict will be converted to datframes and then merged into one
-        pairwise_comparisons = []
-        is_of_interest = [] 
-        
-        all_variants = self._get_all_variant_transcripts(dataframes)
-        
-        n=0
-        total = len(all_variants)
-        
-        for v in all_variants:
-            chromosome = v.chromosome
-            position = v.position
-            reference = v.reference
-            alt = v.alt
-            cdna_transcript = v.cdna_transcript
-            
-            tool_transcript_counter = Counter()
-            
-            # From each datasource fetch a row that matches the vairant and transcript  
-            rows = []
-            for df in dataframes:
-                row = self._get_variant_transcript_row(df, chromosome, position, reference, alt, cdna_transcript)
+        merged_df = self._get_merged_df(dataframes)
+        merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['g_dot'], new_field_name='g_dot_concordance')
+        merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['c_dot'], new_field_name='c_dot_concordance')
+        merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['p_dot1'], new_field_name='p_dot_cordance')
+        merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['c_dot', 'p_dot1'], new_field_name='c+p_concordance')
+        merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['exon', 'c_dot', 'p_dot1'], new_field_name='c+p+exon_concordance')
+        merged_df = self._add_vep_refseq_ref_mismatch_field(merged_df, new_field_name='vep_refseq_mismatch')
                 
-                if row.shape[0] > 1:
-                    raise ValueError(f"Data source {df.attrs['nomenclature_tool']} has multiple rows for: {chromosome, position, reference, alt, cdna_transcript}")
-                if row.empty:
-                    self._logger
-                    continue
-                
-                tool_transcript_counter[df.attrs['nomenclature_tool']] += 1
-                rows.append(row)
-                        
-            # Perform pairwise comparison of exon,c.,p. for all datasources that have a matching row                     
-            pairwise_comparisons.append(self._get_pairwise_comparison(chromosome, position, reference, alt, cdna_transcript, rows))
-            
-            # Flag rows that raise an eyebrow 
-            is_of_interest.append(self._get_is_of_interest(chromosome, position, reference, alt, cdna_transcript, rows))
-            
-            n = n + 1
-            if n % 1000 == 0:
-                self._logger.info(f"Processed {n}/{total} transcripts")
+        return merged_df
 
-        # Create dataframes from the dict objects 
-        pairwise_df  = pd.DataFrame(pairwise_comparisons).astype({'pairwise_score': float})
-        of_interest_df = pd.DataFrame(is_of_interest)
+    def _calculate_pairwise_score(self, merged_df: pd.DataFrame, tool_dataframes: list[pd.DataFrame], fields_to_compare: list[str], new_field_name):
+        """
+        Compare the fields_to_compare   
+        """
+        tool_dataframe_names = [x.attrs['nomenclature_tool'] for x in tool_dataframes]
         
-        # Merge the two dataframes    
-        join_cols = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript']
-        comparison_df = pd.merge(pairwise_df, of_interest_df, on=join_cols, how='left')
+        pairs = list(itertools.combinations(tool_dataframe_names, 2))
+        
+        total_matches = pd.Series(0, index=merged_df.index)
+                
+        possible_comparisons = pd.Series(0, index=merged_df.index)
+        
+        for t1, t2 in pairs:
             
-        assert pairwise_df.shape[0] == of_interest_df.shape[0] == comparison_df.shape[0], "unintended df shape change"
-        # if pairwise_df.shape[0] != of_interest_df.shape[0] != comparison_df.shape[0] != "unintended df shape change":
-            # raise ValueError("unintended df shape change")
-
-        return comparison_df
-
+            t1_has_fields = all((t1, f) in merged_df.columns for f in fields_to_compare)
+            t2_has_fields = all((t2, f) in merged_df.columns for f in fields_to_compare)
+            if not (t1_has_fields and t2_has_fields):
+                self._logger.info(f"Unable to calculate pairwise score of {fields_to_compare} because {t1} or {t2} does not have that one of the fields.")
+                continue
+                 
+            # 1. Determine if BOTH tools have data for ALL fields in the list
+            # We start with True and 'AND' it with each field's presence
+            both_have_all_data = pd.Series(True, index=merged_df.index)
+            for field in fields_to_compare:
+                both_have_all_data &= (merged_df[t1, field].notna() & merged_df[t2, field].notna())
+            
+            # 2. Determine if ALL fields match exactly between the two tools
+            # We start with True and 'AND' it with each field's comparison
+            all_fields_match = pd.Series(True, index=merged_df.index)
+            for field in fields_to_compare:
+                all_fields_match &= (merged_df[t1, field] == merged_df[t2, field])
+            
+            # 3. A 'Point' is awarded only if they match AND both had data
+            match_mask = all_fields_match & both_have_all_data
+            
+            # 3. Add to counters
+            total_matches += match_mask.astype(int)
+            possible_comparisons += both_have_all_data.astype(int)
+            
+        # 4. Calculate Score: matches / comparisons 
+        # (avoid division by zero with .replace)        
+        merged_df['scores', new_field_name] = total_matches / possible_comparisons.replace(0, np.nan)
+        return merged_df
+    
+        
     def _get_field_name(self, pattern, df: pd.DataFrame, optional=False):
         """
         Return the name of the field that has c. in it
@@ -154,129 +200,18 @@ class JoinAndCompare(object):
         else:
             return None
     
-    def _get_pairwise_comparison(self, chromosome, position, reference, alt, cdna_transcript, rows: list[pd.DataFrame]) -> dict:
+    def _add_vep_refseq_ref_mismatch_field(self, merged_df: pd.DataFrame, new_field_name: str):
         """
-        Calculate pairwise comparison score for c., p., and exon from all sources.
+        Add a field that is 1 when vepRefSeq GIVEN_REF != USED_REF
         """
-        comparison = {'chromosome': chromosome,
-                       'position': position,
-                       'reference': reference,
-                       'alt': alt,
-                       'cdna_transcript': cdna_transcript}
-
-        # c. values for comparison
-        c_dot_values = []        
-        for row in rows:
-            if not row.empty:
-                c_dot_values.append(row[row.attrs['field_c_dot']].item())
-             
-        # p. values for comparison        
-        p_dot_values = []
-        for row in rows:
-            if not row.empty:
-                p_dot_values.append(row[row.attrs['field_p_dot1']].item())    
-
-                     
-        # exon vlaues for comparison
-        exon_values = []
-        for row in rows:
-            if not row.empty:
-                # Not all dataframes have an exon field
-                exon_field_name = row.attrs['field_exon']
-                if exon_field_name:
-                    exon_values.append(row[exon_field_name].item())
+        mismatch_mask = (
+            (merged_df[(NomenclatureTools.VEP_REFSEQ.value, 'GIVEN_REF')] != merged_df[(NomenclatureTools.VEP_REFSEQ.value, 'USED_REF')]) & 
+            merged_df[(NomenclatureTools.VEP_REFSEQ.value, 'GIVEN_REF')].notna() & 
+            merged_df[(NomenclatureTools.VEP_REFSEQ.value, 'USED_REF')].notna()
+            )
         
-        c_pairs  = list(combinations(c_dot_values, 2))
-        p_pairs = list(combinations(p_dot_values, 2))
-        e_pairs = list(combinations(exon_values, 2))
-        
-        c_matches = sum(1 for a, b in c_pairs if a == b)
-        p_matches = sum(1 for a, b in p_pairs if a == b)
-        e_matches = sum(1 for a, b in e_pairs if a == b)
-        
-        c_score = -1 if len(c_pairs) == 0 else (c_matches / len(c_pairs))
-        p_score = -1 if len(p_pairs) == 0 else (p_matches / len(p_pairs))
-        e_score = -1 if len(e_pairs) == 0 else (e_matches / len(e_pairs))
-        
-        if c_score == -1 and p_score == -1 and e_score == -1:
-            # a score of -3 means only one source provided a value 
-            final_score = -3
-        else:
-            score_sum = 0
-            divisor = 0
-            
-            if c_score >= 0:
-                score_sum += c_score
-                divisor += 1
-            
-            if p_score >= 0:
-                score_sum += p_score
-                divisor += 1
-            
-            if e_score >= 0:
-                score_sum += e_score
-                divisor += 1            
-        
-            final_score = (c_score + p_score + e_score) / divisor
-        
-        comparison['pairwise_score'] = round(final_score, 3)
-            
-        return comparison
-    
-    def _get_is_of_interest(self, chromosome, position, reference, alt, cdna_transcript, rows: list[pd.DataFrame]) -> bool:
-        """
-        Return a dataframe with a single row "of_interst" that will be true when
-        * Any of the g_dot fields don't match
-        * Mutalyzer status = Failed
-        * Vep's GIVEN_REF and USED_REF don't match
-        * Vep's vep.refseq.BAM_EDIT is a value we haven't seen before
-        * Vep's vep (either) REFSEQ_MATCH is a value we haven't seen before        
-        """
-        
-        is_of_interest = {'chromosome': chromosome,
-                       'position': position,
-                       'reference': reference,
-                       'alt': alt,
-                       'cdna_transcript': cdna_transcript,
-                       'of_interest': None 
-                       }
-        
-        interest_codes = []
-        
-        # Are all of the g. the same? 
-        g_dots = set()
-        for row in rows:
-            g_dot_field = self._get_field_name('g_dot', row, True)
-            if g_dot_field:
-                g_dots.add(row[g_dot_field].item())
-        
-        if len(g_dots) > 1:
-            self._logger.info(f"Variant g. don't match for {chromosome}-{position}-{reference}-{alt}")
-            interest_codes.append('gdot_mismatch') 
-                     
-        # In the VEP refseq comparison do GIVEN_REF and USED_REF  match?
-        vep_refseq_row = self._get_row(NomenclatureTools.VEP_REFSEQ, rows)
-        if vep_refseq_row is not None and vep_refseq_row['vep.refseq.GIVEN_REF'].item() != vep_refseq_row['vep.refseq.USED_REF'].item():
-            interest_codes.append('vep_ref_difference')
-        
-        # if the BAM_EDIT is a value we haven't seen before
-        vep_refseq_row = self._get_row(NomenclatureTools.VEP_REFSEQ, rows)
-        if vep_refseq_row is not None and vep_refseq_row['vep.refseq.BAM_EDIT'].item() not in ['-', 'OK', 'FAILED']:
-            interest_codes.append('vep_refseq_unknown_bamedit')
-        
-        # If REFSEQ_MATCH value we haven't seen before 
-        vep_refseq_row = self._get_row(NomenclatureTools.VEP_REFSEQ, rows)
-        if vep_refseq_row is not None and vep_refseq_row['vep.refseq.REFSEQ_MATCH'].item() != '-':
-            interest_codes.append('vep_refseq_unknown_refseq_match')
-        
-        # a REFSEQ_MATCH value we haven't seen before
-        vep_hg19_row = self._get_row(NomenclatureTools.VEP_HG19, rows)
-        if vep_hg19_row is not None and not vep_hg19_row.empty and vep_hg19_row['vep.hg19.REFSEQ_MATCH'].item() != '-':
-            interest_codes.append('vep_hg19_refseq_match')
-        
-        is_of_interest['of_interest'] = '|'.join(interest_codes)
-        
-        return is_of_interest
+        merged_df[('scores', new_field_name)] = mismatch_mask.astype(int)
+        return merged_df
         
     def _get_row(self, nomenclature_tool, rows: list):
         """
@@ -288,71 +223,136 @@ class JoinAndCompare(object):
         
         return None
         
+    def _write_sheet_raw(self, writer, workbook, df, sheet_name):
+        """
+        Add the raw data worksheet 
+        """
+        df.to_excel(writer, sheet_name='Raw')
+        worksheet = workbook['Raw']
+        bold_font = Font(bold=True)
+        for row in worksheet.iter_rows(min_row=1, max_row=2):
+            for cell in row:
+                cell.font = bold_font
+        
+        worksheet.freeze_panes = 'A3'
+
+    def _write_sheet_comparison(self, writer, workbook, df, sheet_name):
+        """
+        Format the data to make it easier to read  
+        """
+        human_fields = ['c_dot', 'p_dot1', 'exon', 'g_dot']
+        selected_columns = [
+            col for col in df.columns if col[1] in human_fields and col[0] != 'scores'
+        ]
+        
+        # We reset the index to turn the 5 genomic levels (Chr, Pos, etc.) into regular columns
+        summary_df = df[selected_columns].copy()
+        summary_df = summary_df.reset_index()
+        
+        # 4. Flatten the headers from ('tool', 'field') to 'tool_field'
+        # For the index columns (like 'chromosome'), they won't have a second level, 
+        # so we handle them gracefully.
+        new_headers = []
+        for col in summary_df.columns:
+            if isinstance(col, tuple) and col[1] != '':
+                new_headers.append(f"{col[0]}_{col[1]}")
+            else:
+                # This handles the index columns like 'chromosome', 'position', etc.
+                new_headers.append(col[0] if isinstance(col, tuple) else col)
+        
+        summary_df.columns = new_headers
+        summary_df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        # Bold the single header row in the new sheet
+        summary_sheet = writer.book[sheet_name]
+        for cell in summary_sheet[1]: # Row 1
+            cell.font = Font(bold=True)
+        
+        summary_sheet.freeze_panes = 'A2' # Freeze just the header
+        
     def write(self, 
               out_file, 
-              dataframes: list[pd.DataFrame]):
+              comparison_df: pd.DataFrame):
         """
-        Join all the dataframs on the variant+transcript fields and write out a csv with all fields.  
-        """        
-        join_cols = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript']
-        sort_cols = ['pairwise_score', 'chromosome', 'position', 'reference', 'alt', 'cdna_transcript']
-        sort_orders = [False, True, True, True, True, True]
+        Write the dataframe with its new comparison fields to file
+        #merged_df.columns = [f"{source}_{field}" for source, field in merged_df.columns]
+        #merged_df.to_csv("/tmp/merged_pairwise_df.csv", index=True)  
+        """                        
+        #sort_cols = ['c+p+exon_concordance', 'chromosome', 'position', 'reference', 'alt']
+        #sort_orders = [False, True, True, True, True]
+        comparison_df.sort_values(
+            by=('scores', 'c+p+exon_concordance'), 
+            ascending=False, 
+            inplace=True
+            )
         
-        # Perform outter join on variant+transcript fields         
-        merged_df = (
-            reduce(lambda left, right: pd.merge(left, right, on=join_cols, how='outer'), dataframes)
-            .sort_values(by=sort_cols, ascending=sort_orders)
-        )
+        self._logger.info("Creating workbook")
         
-        # There are a lot of fields in the dataframe. Move the important ones up front         
-        front_columns = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript', 'pairwise_score']
-        
-        # Group all the exon columns tobether 
-        exons_field_names = list(filter(None, [self._get_field_name('exon', x, True) for x in dataframes]))
-        front_columns.extend(exons_field_names)
-        
-        # Group all the c_dot columns together
-        c_dot_field_names = list(filter(None, [self._get_field_name('c_dot', x, True) for x in dataframes]))
-        front_columns.extend(c_dot_field_names)
-        
-        # Group all the p_dot1 columns 
-        p_dot1_field_names = list(filter(None, [self._get_field_name('p_dot1', x, True) for x in dataframes]))
-        front_columns.extend(p_dot1_field_names)
-        
-        # Group all the g_dot columns 
-        g_dot_field_names = list(filter(None, [self._get_field_name('g_dot', x, True) for x in dataframes]))
-        front_columns.extend(g_dot_field_names)
-        
-        # Group all the pdot3
-        p_dot3_field_names = list(filter(None, [self._get_field_name('p_dot3', x, True) for x in dataframes]))
-        front_columns.extend(p_dot3_field_names)
-        
-        # Group the protein transcript columns 
-        protein_transcript_field_names = list(filter(None, [self._get_field_name('protein_transcript', x, True) for x in dataframes]))
-        front_columns.extend(protein_transcript_field_names)
-        
-        # Group the gene columns
-        gene_field_names = list(filter(None, [self._get_field_name('gene', x, True) for x in dataframes]))
-        front_columns.extend(gene_field_names)
-        
-        # Group genomic region type
-        grt_field_names = list(filter(None, [self._get_field_name('genomic_region_type', x, True) for x in dataframes]))
-        front_columns.extend(grt_field_names)
-        grt_field_names = list(filter(None, [self._get_field_name('grt', x, True) for x in dataframes]))
-        front_columns.extend(grt_field_names)
-        
-        # Group protein variant type
-        pvt_field_names = list(filter(None, [self._get_field_name('protein_variant_type', x, True) for x in dataframes]))
-        front_columns.extend(pvt_field_names)
-        pvt_field_names = list(filter(None, [self._get_field_name('pvt', x, True) for x in dataframes]))
-        front_columns.extend(pvt_field_names)
- 
-        # Gather a list of all columns other than the front_columns
-        other_columns = [c for c in merged_df.columns if c not in front_columns]
+        # with pd.ExcelWriter(out_file, engine='xlsxwriter') as writer:
+        with pd.ExcelWriter(out_file, engine='openpyxl') as writer:
+            workbook  = writer.book
+            
+            self._write_sheet_raw(writer, workbook, comparison_df, 'Raw')
+            self._write_sheet_comparison(writer, workbook, comparison_df, 'Comparison')
 
-        merged_df.to_csv(out_file, index=False, encoding='utf-8', columns=front_columns+other_columns)
+        self._logger.info("jDebug3")
+        #comparison_df.to_excel(writer, sheet_name='Comparison')
+        #self._logger.info("jDebug4")
+
+        # join_cols = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript']
+        # sort_cols = ['pairwise_score', 'chromosome', 'position', 'reference', 'alt', 'cdna_transcript']
+        #
+        #
+        #
+        # # There are a lot of fields in the dataframe. Move the important ones up front         
+        # front_columns = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript', 'pairwise_score']
+        #
+        # # Group all the exon columns tobether 
+        # exons_field_names = list(filter(None, [self._get_field_name('exon', x, True) for x in dataframes]))
+        # front_columns.extend(exons_field_names)
+        #
+        # # Group all the c_dot columns together
+        # c_dot_field_names = list(filter(None, [self._get_field_name('c_dot', x, True) for x in dataframes]))
+        # front_columns.extend(c_dot_field_names)
+        #
+        # # Group all the p_dot1 columns 
+        # p_dot1_field_names = list(filter(None, [self._get_field_name('p_dot1', x, True) for x in dataframes]))
+        # front_columns.extend(p_dot1_field_names)
+        #
+        # # Group all the g_dot columns 
+        # g_dot_field_names = list(filter(None, [self._get_field_name('g_dot', x, True) for x in dataframes]))
+        # front_columns.extend(g_dot_field_names)
+        #
+        # # Group all the pdot3
+        # p_dot3_field_names = list(filter(None, [self._get_field_name('p_dot3', x, True) for x in dataframes]))
+        # front_columns.extend(p_dot3_field_names)
+        #
+        # # Group the protein transcript columns 
+        # protein_transcript_field_names = list(filter(None, [self._get_field_name('protein_transcript', x, True) for x in dataframes]))
+        # front_columns.extend(protein_transcript_field_names)
+        #
+        # # Group the gene columns
+        # gene_field_names = list(filter(None, [self._get_field_name('gene', x, True) for x in dataframes]))
+        # front_columns.extend(gene_field_names)
+        #
+        # # Group genomic region type
+        # grt_field_names = list(filter(None, [self._get_field_name('genomic_region_type', x, True) for x in dataframes]))
+        # front_columns.extend(grt_field_names)
+        # grt_field_names = list(filter(None, [self._get_field_name('grt', x, True) for x in dataframes]))
+        # front_columns.extend(grt_field_names)
+        #
+        # # Group protein variant type
+        # pvt_field_names = list(filter(None, [self._get_field_name('protein_variant_type', x, True) for x in dataframes]))
+        # front_columns.extend(pvt_field_names)
+        # pvt_field_names = list(filter(None, [self._get_field_name('pvt', x, True) for x in dataframes]))
+        # front_columns.extend(pvt_field_names)
+        #
+        # # Gather a list of all columns other than the front_columns
+        # other_columns = [c for c in merged_df.columns if c not in front_columns]
+        #
+        # merged_df.to_csv(out_file, index=False, encoding='utf-8', columns=front_columns+other_columns)
         
-        self._logger.info(f"Wrote data frame with {merged_df.shape[0]} rows and {merged_df.shape[1]} columns  to {out_file}")
+        self._logger.info(f"Wrote data frame with {comparison_df.shape[0]} rows and {comparison_df.shape[1]} columns to {out_file}")
         
 def _parse_args():
     parser = argparse.ArgumentParser(description='Read Annovar multianno file, extract values and write to new csv')
@@ -386,24 +386,23 @@ def main():
     
     # The hgvs and tfx dataframes are optional
     if args.hgvs_nomenclature:
-        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.HGVS, args.hgvs_nomenclature))
+        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.HGVS, args.hgvs_nomenclature, 'hu.'))
     if args.tfx_nomenclature:
-        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.TFX, args.tfx_nomenclature))
+        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.TFX, args.tfx_nomenclature, '.tfx'))
     if args.cgd_nomenclature:
-        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.CGD, args.cgd_nomenclature))
+        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.CGD, args.cgd_nomenclature, '.cgd'))
         
     # In the future i will make this optional but for now they're always being generated 
-    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.ANNOVAR, args.annovar_nomenclature))    
-    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.SNPEFF, args.snpeff_nomenclature))        
-    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_REFSEQ, args.vep_refseq_nomenclautre))    
-    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_HG19, args.vep_hg19_nomenclature))
+    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.ANNOVAR, args.annovar_nomenclature, '.annovar'))    
+    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.SNPEFF, args.snpeff_nomenclature, 'snpeff.'))
+    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_REFSEQ, args.vep_refseq_nomenclautre, 'vep.refseq.'))    
+    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_HG19, args.vep_hg19_nomenclature, 'vep.hg19.'))
     
     # Compare exon, c., and p. from all datasources. 
     comparison_df = jc.get_comparison_df(dataframes)
-    dataframes.append(comparison_df)
     
     # Left join all datasets to the variant list. Write out all rows and all fields
-    jc.write(args.out, dataframes)
+    jc.write(args.out, comparison_df)
     
 
 if __name__ == '__main__':
