@@ -17,8 +17,9 @@ process performAnalysis {
 
     output:
     path "analysis_pairwise_equality.csv", emit: analysis_pairwise_equality
+    path "analysis_pairwise_equality.txt", emit: analysis_pairwise_equality_txt
     path "analysis_one_source_divergence.xlsx", emit: analysis_one_source_divergence
-
+    
     script:
     def tfx_nomenclature_arg = tfx_nomenclature ? "--nomenclature tfx $tfx_nomenclature" : ""
     def hgvs_nomenclature_arg = hgvs_nomenclature ? "--nomenclature hgvs $hgvs_nomenclature" : ""
@@ -34,6 +35,8 @@ process performAnalysis {
         --nomenclature vepRefseq ${vep_refseq_nomenclautre} \
         --nomenclature vepHg19 ${vep_hg19_nomenclature} \
         --out analysis_pairwise_equality.csv
+    
+    python -c "import pandas as pd; from tabulate import tabulate; df=pd.read_csv('analysis_pairwise_equality.csv'); print(tabulate(df, headers='keys', tablefmt='psql', missingval=''))" > analysis_pairwise_equality.txt
 
     python -m rinc.analysis.one_source_divergence \
         ${hgvs_nomenclature_arg} \
