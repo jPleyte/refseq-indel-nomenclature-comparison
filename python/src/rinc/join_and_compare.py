@@ -227,48 +227,118 @@ class JoinAndCompare(object):
         """
         Add the raw data worksheet 
         """
-        df.to_excel(writer, sheet_name='Raw')
-        worksheet = workbook['Raw']
-        bold_font = Font(bold=True)
-        for row in worksheet.iter_rows(min_row=1, max_row=2):
-            for cell in row:
-                cell.font = bold_font
+        df.to_excel(writer, sheet_name=sheet_name)
+        worksheet = writer.sheets[sheet_name]
         
-        worksheet.freeze_panes = 'A3'
+        bold_fmt = workbook.add_format({'bold': True, 'bg_color': '#D3D3D3', 'border': 1})
+        worksheet.set_row(0, None, bold_fmt)
+        worksheet.set_row(1, None, bold_fmt)
+        
+        worksheet.freeze_panes(2, 0)
+        worksheet.set_column('A:ZZ', 18)
 
-    def _write_sheet_comparison(self, writer, workbook, df, sheet_name):
+    def _write_sheet_comparison(self, writer, workbook, flat_df: pd.DataFrame, sheet_name):
         """
         Format the data to make it easier to read  
         """
-        human_fields = ['c_dot', 'p_dot1', 'exon', 'g_dot']
-        selected_columns = [
-            col for col in df.columns if col[1] in human_fields and col[0] != 'scores'
-        ]
-        
-        # We reset the index to turn the 5 genomic levels (Chr, Pos, etc.) into regular columns
-        summary_df = df[selected_columns].copy()
-        summary_df = summary_df.reset_index()
-        
-        # 4. Flatten the headers from ('tool', 'field') to 'tool_field'
-        # For the index columns (like 'chromosome'), they won't have a second level, 
-        # so we handle them gracefully.
-        new_headers = []
-        for col in summary_df.columns:
-            if isinstance(col, tuple) and col[1] != '':
-                new_headers.append(f"{col[0]}_{col[1]}")
-            else:
-                # This handles the index columns like 'chromosome', 'position', etc.
-                new_headers.append(col[0] if isinstance(col, tuple) else col)
-        
-        summary_df.columns = new_headers
-        summary_df.to_excel(writer, sheet_name=sheet_name, index=False)
+        flat_df.to_excel(writer, sheet_name=sheet_name, index=False)
         
         # Bold the single header row in the new sheet
-        summary_sheet = writer.book[sheet_name]
-        for cell in summary_sheet[1]: # Row 1
-            cell.font = Font(bold=True)
+        summary_sheet = writer.sheets[sheet_name]
         
-        summary_sheet.freeze_panes = 'A2' # Freeze just the header
+        bold_fmt = workbook.add_format({'bold': True, 'bg_color': '#D3D3D3', 'border': 1})
+        summary_sheet.set_row(0, None, bold_fmt)
+        
+        summary_sheet.freeze_panes(1, 0)
+        summary_sheet.set_column('A:E', 12) # Genomic coords
+        summary_sheet.set_column('F:ZZ', 25) # Nomenclature fields
+        
+    def _write_sheet_summary(self, writer, workbook, flat_df, sheet_name):
+        """
+        """
+        # 1. Identify all your score columns
+        score_cols = [c for c in flat_df.columns if 'scores_' in c]
+        
+        summary_data = []
+        
+        for col in score_cols:
+            # Get the data for this specific score
+            data = flat_df[col]
+            
+            # How many variants had enough data to actually produce a score?
+            total_comparable = data.notna().sum()
+            
+            # How many of those were perfect matches (score == 1.0)?
+            perfect_matches = (data == 1.0).sum()
+            
+            # Calculate percentage
+            percentage = (perfect_matches / total_comparable * 100) if total_comparable > 0 else 0
+            
+            summary_data.append({
+                'Metric': col.replace('scores_', ''),
+                'Perfect Concordance (n)': perfect_matches,
+                'Total Comparable Variants': total_comparable,
+                'Concordance Rate (%)': round(percentage, 2)
+            })
+        
+        # 2. Create the Summary DataFrame
+        metrics_df = pd.DataFrame(summary_data)
+        
+        # 3. Write to a new sheet in your Excel file
+        # (Add this inside your 'with pd.ExcelWriter...' block)
+        metrics_df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        # 4. Optional: Add a little formatting to the Metrics sheet
+        ws_metrics = writer.sheets[sheet_name]
+        ws_metrics.set_column('A:A', 35) # Make the Metric name wide
+        ws_metrics.set_column('B:D', 20) # Center the numbers
+        
+    def _get_flattened_data_frame(self, df):
+        """
+        """
+        # We reset the index to turn the 5 genomic levels (Chr, Pos, etc.) into regular columns        
+        flat_df = df.copy().reset_index()
+        
+        # 2. Force everything to string, handling MultiIndex tuples specifically
+        new_cols = []
+        for c in flat_df.columns:
+            if isinstance(c, tuple):
+                # Join the tuple parts with underscore, filter out empty strings
+                clean_col = "_".join([str(part) for part in c if str(part).strip()])
+                new_cols.append(clean_col)
+            else:
+                new_cols.append(str(c))
+        
+        
+        flat_df.columns = new_cols
+        
+        # Identify columns index columns
+        index_cols = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript']
+    
+        # every dataframe brought in its own index column (eg cgd_chromosome) and we don't need to see those repeated.  
+        redundant_suffixes = [
+            'chromosome', 'position', 'reference', 'alt', 'cdna_transcript'
+        ] 
+           
+        # nom_cols are all the not index "nomenclature" and other fields 
+        nom_cols = [c for c in flat_df.columns 
+                    if c not in index_cols
+                    and not any(c.endswith(suffix) for suffix in redundant_suffixes)
+                    ]
+                                
+        field_order = ['c_dot', 'p_dot1', 'exon', 'g_dot']
+
+        # 4. The Sort
+        sorted_nom_cols = sorted(
+            nom_cols, 
+            key=lambda x: (
+                next((i for i, f in enumerate(field_order) if x.endswith(f)), len(field_order)),
+                x
+            )
+        )
+        
+        final_column_order = index_cols + sorted_nom_cols
+        return flat_df[final_column_order]        
         
     def write(self, 
               out_file, 
@@ -288,70 +358,16 @@ class JoinAndCompare(object):
         
         self._logger.info("Creating workbook")
         
-        # with pd.ExcelWriter(out_file, engine='xlsxwriter') as writer:
-        with pd.ExcelWriter(out_file, engine='openpyxl') as writer:
+        with pd.ExcelWriter(out_file, engine='xlsxwriter') as writer:
             workbook  = writer.book
             
+            flatened_df = self._get_flattened_data_frame(comparison_df)
+            
+            self._write_sheet_summary(writer, workbook, flatened_df, 'Summary')            
+            self._write_sheet_comparison(writer, workbook, flatened_df, 'Comparison')
             self._write_sheet_raw(writer, workbook, comparison_df, 'Raw')
-            self._write_sheet_comparison(writer, workbook, comparison_df, 'Comparison')
+            
 
-        self._logger.info("jDebug3")
-        #comparison_df.to_excel(writer, sheet_name='Comparison')
-        #self._logger.info("jDebug4")
-
-        # join_cols = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript']
-        # sort_cols = ['pairwise_score', 'chromosome', 'position', 'reference', 'alt', 'cdna_transcript']
-        #
-        #
-        #
-        # # There are a lot of fields in the dataframe. Move the important ones up front         
-        # front_columns = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript', 'pairwise_score']
-        #
-        # # Group all the exon columns tobether 
-        # exons_field_names = list(filter(None, [self._get_field_name('exon', x, True) for x in dataframes]))
-        # front_columns.extend(exons_field_names)
-        #
-        # # Group all the c_dot columns together
-        # c_dot_field_names = list(filter(None, [self._get_field_name('c_dot', x, True) for x in dataframes]))
-        # front_columns.extend(c_dot_field_names)
-        #
-        # # Group all the p_dot1 columns 
-        # p_dot1_field_names = list(filter(None, [self._get_field_name('p_dot1', x, True) for x in dataframes]))
-        # front_columns.extend(p_dot1_field_names)
-        #
-        # # Group all the g_dot columns 
-        # g_dot_field_names = list(filter(None, [self._get_field_name('g_dot', x, True) for x in dataframes]))
-        # front_columns.extend(g_dot_field_names)
-        #
-        # # Group all the pdot3
-        # p_dot3_field_names = list(filter(None, [self._get_field_name('p_dot3', x, True) for x in dataframes]))
-        # front_columns.extend(p_dot3_field_names)
-        #
-        # # Group the protein transcript columns 
-        # protein_transcript_field_names = list(filter(None, [self._get_field_name('protein_transcript', x, True) for x in dataframes]))
-        # front_columns.extend(protein_transcript_field_names)
-        #
-        # # Group the gene columns
-        # gene_field_names = list(filter(None, [self._get_field_name('gene', x, True) for x in dataframes]))
-        # front_columns.extend(gene_field_names)
-        #
-        # # Group genomic region type
-        # grt_field_names = list(filter(None, [self._get_field_name('genomic_region_type', x, True) for x in dataframes]))
-        # front_columns.extend(grt_field_names)
-        # grt_field_names = list(filter(None, [self._get_field_name('grt', x, True) for x in dataframes]))
-        # front_columns.extend(grt_field_names)
-        #
-        # # Group protein variant type
-        # pvt_field_names = list(filter(None, [self._get_field_name('protein_variant_type', x, True) for x in dataframes]))
-        # front_columns.extend(pvt_field_names)
-        # pvt_field_names = list(filter(None, [self._get_field_name('pvt', x, True) for x in dataframes]))
-        # front_columns.extend(pvt_field_names)
-        #
-        # # Gather a list of all columns other than the front_columns
-        # other_columns = [c for c in merged_df.columns if c not in front_columns]
-        #
-        # merged_df.to_csv(out_file, index=False, encoding='utf-8', columns=front_columns+other_columns)
-        
         self._logger.info(f"Wrote data frame with {comparison_df.shape[0]} rows and {comparison_df.shape[1]} columns to {out_file}")
         
 def _parse_args():
