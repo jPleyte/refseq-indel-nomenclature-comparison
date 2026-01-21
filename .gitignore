@@ -213,7 +213,7 @@ annovar/humandb/
 # Nextflow files
 data/Homo_sapiens_assembly*
 data/vep/*
-
+data/cgd/*
 nextflow/work
 nextflow/results*
 nextflow/.nextflow

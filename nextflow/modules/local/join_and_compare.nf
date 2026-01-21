@@ -17,7 +17,7 @@ process joinAndCompare {
     path cgd_nomenclature
 
     output:
-    path "nomenclature_all_transcripts_all_fields.csv", emit: nomenclature_all_transcripts_all_fields
+    path "nomenclature_comparison.xlsx", emit: nomenclature_comparison
 
     script:
     def tfx_nomenclature_arg = tfx_nomenclature ? "--tfx_nomenclature $tfx_nomenclature" : ""
@@ -34,6 +34,6 @@ process joinAndCompare {
         --snpeff_nomenclature ${snpeff_nomenclature} \
         --vep_refseq_nomenclautre ${vep_refseq_nomenclautre} \
         --vep_hg19_nomenclature ${vep_hg19_nomenclature} \
-        --out nomenclature_all_transcripts_all_fields.csv
+        --out nomenclature_comparison.xlsx
     """
 }
