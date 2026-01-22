@@ -373,8 +373,6 @@ class JoinAndCompare(object):
 def _parse_args():
     parser = argparse.ArgumentParser(description='Read Annovar multianno file, extract values and write to new csv')
 
-    parser.add_argument('--variants', help='Variants (csv)', required=True)
-    
     parser.add_argument('--hgvs_nomenclature', help='hgvs/uta values (csv)', required=False)
     parser.add_argument('--tfx_nomenclature', help="Optional Transcript Effect/tfx values (csv)", required=False)
     parser.add_argument('--cgd_nomenclature', help='CGD values (csv)', required=False)

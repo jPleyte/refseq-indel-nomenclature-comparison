@@ -7,7 +7,6 @@ process joinAndCompare {
     publishDir "${params.outdir}", mode: 'symlink'
 
     input:
-    path variants
     path hgvs_nomenclature    
     path annovar_nomenclature    
     path snpeff_nomenclature
@@ -26,7 +25,6 @@ process joinAndCompare {
 
     """
     python -m rinc.join_and_compare \
-        --variants ${variants} \
         ${hgvs_nomenclature_arg} \
         ${tfx_nomenclature_arg} \
         ${cgd_nomenclature_arg} \

@@ -5,6 +5,10 @@
     "description": "This pipeline uses Nextflow to generate and compare c. and p. nomenclature from multiple sources",
     "type": "object",
     "properties": {
+        "variant_transcript_filter": {
+            "type": "string",
+            "description": "CSV with list of variant and transcript to filter on"
+        },
         "cgd_export_db": {
             "type": "string",
             "description": "Nomenclature exported from CGD and saved as parquet (See variant_nomenclature_db.py)"
