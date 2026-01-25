@@ -26,15 +26,14 @@ include { filterNomenclature as filterVepRefseqNomenclature} from './modules/loc
 include { filterNomenclature as filterVepHg19Nomenclature} from './modules/local/filter_nomenclature.nf'
 include { filterNomenclature as filterTfxNomenclature} from './modules/local/filter_nomenclature.nf'
 include { filterNomenclature as filterCgdNomenclature} from './modules/local/filter_nomenclature.nf'
+include { writeExonDetail } from './modules/local/write_exon_detail.nf'
 
 workflow {
     main:
     uta_schema = channel.value(params.uta_schema)
     fasta_ch = channel.fromPath(params.fasta, checkIfExists: true)
-
-    def ch_variant_transcript_filter = params.variant_transcript_filter ? 
-        channel.value(file(params.variant_transcript_filter, checkIfExists: true)) : 
-        channel.value(file("NO_FILTER"))
+    ncbi_refseq_gff_db = channel.fromPath(params.ncbi_refseq_gff_db, checkIfExists: true)
+    ncbi_refseq_gff_accession_index_df = channel.fromPath(params.ncbi_refseq_gff_accession_index_df, checkIfExists: true)
 
     def vep_sequence_modes = [
         refseq: "--use_transcript_ref",
@@ -47,6 +46,18 @@ workflow {
     if (params.variant_source != 'gap_query') {
         println "Using variant source file: ${params.variant_source_file}"
     } 
+
+    // Optional filter - list of variants and transcripts to keep 
+    def filter_file_obj = params.variant_transcript_filter ? file(params.variant_transcript_filter, checkIfExists: true) : []
+    // Print the status message
+    if (filter_file_obj) {
+        println "Using Variant Transcript Filter: ${filter_file_obj.name}"
+    } else {
+        println "No Variant Transcript Filter provided."
+    }
+    // Create the value channel
+    def ch_variant_transcript_filter = channel.value(filter_file_obj)
+
 
     // Parameter validation
     if (params.variant_source_file != null && params.variant_source == 'gap_query') {
@@ -117,11 +128,31 @@ workflow {
     }
 
     def ch_cgd_filtered = channel.empty()
-    if (params.cgd_export_db != null) {
-        cgd_nomenclature = writeCgdNomenclatureToCsv(params.cgd_export_db, ch_variants)
+    if (params.cgd_export_df != null) {
+        cgd_nomenclature = writeCgdNomenclatureToCsv(params.cgd_export_df, ch_variants)
         ch_cgd_filtered = filterCgdNomenclature(cgd_nomenclature, ch_variant_transcript_filter)
     }
 
+    def ch_all_labeled = ch_hgvs_nomenclature_filtered.map { file -> ["hgvs_uta", file] }
+        .mix( ch_annovar_filtered.map { file -> ["annovar", file] } )
+        .mix( ch_snpeff_filtered.map  { file -> ["snpeff", file] } )
+        .mix( ch_vepRefSeq_filtered.map { file -> ["vep_refseq", file] } )
+        .mix( ch_vepHg19_filtered.map   { file -> ["vep_hg19", file] } )
+        .mix( ch_tfx_filtered.map       { file -> ["tfx", file] } )
+        .mix( ch_cgd_filtered.map       { file -> ["cgd", file] } )
+
+    def ch_final_tool_outputs = ch_all_labeled.toList()
+
+    // Pirint out the list of nomenclature files
+    ch_final_tool_outputs.view { list -> 
+        "Collected Outputs:\n" + list.collect { tuple -> "  - $tuple" }.join("\n") 
+    }
+
+    // Write out exon position and cigar strings for every transcript    
+    writeExonDetail(ncbi_refseq_gff_db, ncbi_refseq_gff_accession_index_df, ch_final_tool_outputs)
+    
+    // error "STOPPING WORKFLOW for debuging"
+    
     // Compare hgvs and annovar, join hgvs, annovar, and gaps file into final output
     joinAndCompare(ch_hgvs_nomenclature_filtered.ifEmpty([]),
                    ch_annovar_filtered,

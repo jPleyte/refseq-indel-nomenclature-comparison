@@ -214,6 +214,7 @@ annovar/humandb/
 data/Homo_sapiens_assembly*
 data/vep/*
 data/cgd/*
+data/gff/*
 nextflow/work
 nextflow/results*
 nextflow/.nextflow

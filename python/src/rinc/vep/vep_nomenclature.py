@@ -286,6 +286,8 @@ class VepNomenclature(object):
             
             vt.exon = self._get_exon(row)
             
+            vt.additional_fields['STRAND'] = row['STRAND']
+            
             vt.additional_fields['REFSEQ_MATCH'] = row['REFSEQ_MATCH']
             if 'BAM_EDIT' in row: 
                 vt.additional_fields['BAM_EDIT'] = row['BAM_EDIT']
@@ -307,7 +309,7 @@ class VepNomenclature(object):
                    'cdna_transcript', f'vep.{self._label}protein_transcript', 
                    f'vep.{self._label}.exon', f'vep.{self._label}.gene', f'vep.{self._label}.grt', f'vep.{self._label}.pvt',
                    f'vep.{self._label}.g_dot', f'vep.{self._label}.c_dot', f'vep.{self._label}.p_dot1', f'vep.{self._label}.p_dot3',
-                   f'vep.{self._label}.REFSEQ_MATCH']
+                   f'vep.{self._label}.REFSEQ_MATCH', f"vep.{self._label}.STRAND"]
         
         if variant_transcripts and 'BAM_EDIT' in variant_transcripts[0].additional_fields:
             headers.append(f'vep.{self._label}.BAM_EDIT')
@@ -326,13 +328,15 @@ class VepNomenclature(object):
                        v.cdna_transcript, v.protein_transcript, 
                        v.exon, v.gene, v.genomic_region_type, v.protein_variant_type,
                        v.g_dot, v.c_dot, v.p_dot1, v.p_dot3,
-                       v.additional_fields['REFSEQ_MATCH']]
+                       v.additional_fields['REFSEQ_MATCH'], 
+                       v.additional_fields['STRAND']]
                 
                 if 'BAM_EDIT' in variant_transcripts[0].additional_fields:
                     row.append(v.additional_fields['BAM_EDIT'])
                 if 'GIVEN_REF' in variant_transcripts[0].additional_fields:
                     row.append(v.additional_fields['GIVEN_REF'])
                     row.append(v.additional_fields['USED_REF'])
+                
                     
                 writer.writerow(row)
             

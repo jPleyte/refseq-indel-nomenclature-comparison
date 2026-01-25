@@ -15,7 +15,7 @@ process filterNomenclature {
     path "${input_csv.baseName}_filtered.csv", emit: filtered_csv
 
     script:
-    if (filter_file.name != 'NO_FILTER') 
+    if ( filter_file )
         """
         python -m rinc.io.filter_nomenclature \
             --input ${input_csv} \

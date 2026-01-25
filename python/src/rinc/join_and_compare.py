@@ -134,7 +134,11 @@ class JoinAndCompare(object):
         merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['c_dot', 'p_dot1'], new_field_name='c+p_concordance')
         merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['exon', 'c_dot', 'p_dot1'], new_field_name='c+p+exon_concordance')
         merged_df = self._add_vep_refseq_ref_mismatch_field(merged_df, new_field_name='vep_refseq_mismatch')
-                
+        
+        # Add a field indicating when cgd&annovar agree but disagree with tfx&vepHg19 on c_dot
+        merged_df = self._add_consensus_conflict_field(merged_df, ['cgd', 'annovar'], ['tfx', 'vep_hg19'], ['c_dot'], 'ca_vs_tvv_conflict')
+        
+                        
         return merged_df
 
     def _calculate_pairwise_score(self, merged_df: pd.DataFrame, tool_dataframes: list[pd.DataFrame], fields_to_compare: list[str], new_field_name):
@@ -340,6 +344,50 @@ class JoinAndCompare(object):
         final_column_order = index_cols + sorted_nom_cols
         return flat_df[final_column_order]        
         
+    def _add_consensus_conflict_field(self, merged_df: pd.DataFrame, list_a: list[str], list_b: list[str], fields: list[str], new_field_name):
+        """
+        Identifies rows where ListA tools agree, ListB tools agree, but Group A disagrees with Group B.
+        """
+        # Initialize a mask that starts as True for all rows
+        # We will 'AND' this with our conditions
+        final_mask = pd.Series(True, index=merged_df.index)
+    
+        for field in fields:
+            # --- 1. Check Internal Consensus for List A ---
+            # All must be non-null and equal to the first tool in the list
+            a_first = list_a[0]
+            a_consensus = pd.Series(True, index=merged_df.index)
+            
+            for tool in list_a:
+                # Must have data
+                a_consensus &= merged_df[tool, field].notna()
+                # Must match the first tool
+                a_consensus &= (merged_df[tool, field] == merged_df[a_first, field])
+            
+            # --- 2. Check Internal Consensus for List B ---
+            b_first = list_b[0]
+            b_consensus = pd.Series(True, index=merged_df.index)
+            
+            for tool in list_b:
+                b_consensus &= merged_df[tool, field].notna()
+                b_consensus &= (merged_df[tool, field] == merged_df[b_first, field])
+                
+            # --- 3. Check for Disagreement between Group A and Group B ---
+            groups_disagree = (merged_df[a_first, field] != merged_df[b_first, field])
+            
+            # Combine for this specific field
+            field_criteria = a_consensus & b_consensus & groups_disagree
+            
+            # Update the final mask (Row must meet criteria for ALL fields, e.g., c_dot AND p_dot)
+            final_mask &= field_criteria
+    
+        self._logger.info(f"Consensus conflict for {list_a} vs {list_b} has {final_mask.sum()} rows")
+        
+        # Add a boolean field indicating rows that match the criteria
+        merged_df[('scores', new_field_name)] = final_mask
+        return merged_df
+        
+
     def write(self, 
               out_file, 
               comparison_df: pd.DataFrame):

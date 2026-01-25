@@ -58,41 +58,69 @@ class VariantNomenclatureDatabase(object):
             df.set_index(self._index_cols, drop=False, inplace=True)
             return df
             
+    def _values_differ(self, val1, val2):
+        # If both are null (None, NaN, etc), they do NOT differ
+        if pd.isna(val1) and pd.isna(val2):
+            return False
+        # If one is null and the other isn't, they DO differ
+        if pd.isna(val1) or pd.isna(val2):
+            return True
+        # Otherwise, do a standard comparison
+        return val1 != val2
     
-    def add_variant_transcripts_to_db(self, import_file: str):
+    def add_variant_transcripts_to_db(self, import_file: str, overwrite):
         """
         """
         incoming_data_counter = Counter()
+        incoming_data_counter['initial_size'] = self._vn_df.shape[0]
+        
         type_map = {col: series.dtype for col, series in self._schema.items()}
         incoming_df = pd.read_csv(import_file, 
                                   dtype=type_map)
         
-        new_rows = [] 
-        for _, row in incoming_df.iterrows():
-            incoming_data_counter['total'] += 1
-                        
-            row_key = (str(row['chromosome']), 
-                       row['position_start'], 
-                       row['reference_base'], 
-                       row['variant_base'], 
-                       row['cdna_transcript'])
+        incoming_df.set_index(self._index_cols, drop=False, inplace=True)
+        
+        #Identify Conflicts: Intersection finds keys that exist in both DataFrames
+        conflicts = incoming_df.index.intersection(self._vn_df.index)
+        
+        incoming_data_counter['match_count'] = len(conflicts)
+        
+        if not conflicts.empty:
+            self._logger.info(f"Found {len(conflicts)} conflicting rows. Overwrite set to: {overwrite}")
+
+            # Log the details of the conflicts
+            for key in conflicts:
+                old_row = self._vn_df.loc[key]
+                new_row = incoming_df.loc[key]
+                
+                # Log the conflicting rows 
+                c_diff = self._values_differ(old_row.get('genotype_cdna'), new_row.get('genotype_cdna'))
+                p_diff = self._values_differ(old_row.get('genotype_amino_acid_onel'), new_row.get('genotype_amino_acid_onel'))
+    
+                if c_diff or p_diff:
+                    incoming_data_counter['variant_transcript_match_nomenclature_mismatch'] += 1
+                    msg = (f"Conflict for {key}\n"
+                           f"  Existing: [c.: {old_row.get('genotype_cdna', 'N/A')}, p.: {old_row.get('genotype_amino_acid_onel', 'N/A')}]\n"
+                           f"  Incoming: [c.: {new_row.get('genotype_cdna', 'N/A')}, p.: {new_row.get('genotype_amino_acid_onel', 'N/A')}]")
+                    self._logger.info(msg)
             
-            if row_key in self._vn_df.index:
-                if self._is_matching_nomenclature(row, row_key):
-                    incoming_data_counter['incoming_match_duplicate'] += 1
-                else:                    
-                    incoming_data_counter['incoming_match_different'] += 1
+            if overwrite:
+                # Remove existing conflicts and then append all incoming
+                self._vn_df = self._vn_df.drop(index=conflicts)
+                self._vn_df = pd.concat([self._vn_df, incoming_df])
+                incoming_data_counter['added_count'] = len(incoming_df)
             else:
-                incoming_data_counter['new'] += 1
-                new_rows.append(row)
+                # SKIP: Only add rows that do NOT exist in the current index
+                new_entries = incoming_df.drop(index=conflicts)
+                self._vn_df = pd.concat([self._vn_df, new_entries])
+                incoming_data_counter['added_count'] = len(new_entries)
         
-        if new_rows:
-            new_df = pd.DataFrame(new_rows)
-            new_df.set_index(self._index_cols, drop=False, inplace=True)
-            self._vn_df = pd.concat([self._vn_df, new_df])
-            self._vn_df.sort_index(inplace=True)
+        self._vn_df.sort_index(inplace=True)
+            
+        self._logger.info(f"Imported {import_file}")
+        self._logger.info(f"results: {incoming_data_counter}")
+    
         
-        self._logger.info(f"Imported {import_file} with results: {incoming_data_counter}")
     
     def _is_matching_nomenclature(self, incoming_row, row_key):
         """
@@ -101,7 +129,7 @@ class VariantNomenclatureDatabase(object):
         incoming_c_dot = incoming_row['genotype_cdna']
         
         if not (existing_c_dot == incoming_c_dot):
-            self._logger.info("Incoming row matces variant and transcript but has different nomenclature")
+            self._logger.info("Incoming row matches variant and transcript but has different nomenclature: ")
             return False
         else:
             return True
@@ -133,7 +161,7 @@ def _parse_args():
     parser.add_argument("--version", action="version", version="0.0.1")
     parser.add_argument("--db_file", help="Variant transcript db file to load or create (csv)", required=True)    
     parser.add_argument("--import", dest="import_file", help="SQL dump to import (csv)", required=True)
-    
+    parser.add_argument("--overwrite", action='store_true', help="SQL dump to import (csv)", required=False)
     args = parser.parse_args()
     return args    
 
@@ -143,7 +171,7 @@ def main():
     args = _parse_args()
     
     vn_db = VariantNomenclatureDatabase(args.db_file)
-    vn_db.add_variant_transcripts_to_db(args.import_file)
+    vn_db.add_variant_transcripts_to_db(args.import_file, args.overwrite)
     vn_db.save_db()
     
 if __name__ == '__main__':
