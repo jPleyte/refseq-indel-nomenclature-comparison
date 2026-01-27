@@ -9,13 +9,10 @@ import logging.config
 from rinc.util.log_config import LogConfig
 import pandas as pd
 from functools import reduce
-from itertools import combinations
 from rinc.variant_transcript import VariantTranscript
-from collections import Counter
 from enum import Enum
 import itertools
 import numpy as np
-from openpyxl.styles import Font
 
 class NomenclatureTools(Enum):
     HGVS = "hgvs"
@@ -88,15 +85,14 @@ class JoinAndCompare(object):
         """
         Merge all the dataframes into one. 
         I don't want to inner join them all because that is very limiting.
-        I don't want to outter join them all because that will give me too much.  
-        So i inner join on certain high qualty sources like annovar, tfx, and vep
-        And then left join the others in.  
-               
-        If i wanted to inner join them all i would use: pd.concat(dataframes, axis=1, join='inner')
-          
+        I don't want to outter join them all because that will give me too much.
+        
+        So i keep everything from CGD and Tfx since they'r ewhat we're most interested in. 
+        I inner join annovar and vep     
         """
         inner_join_dfs = []  
         outer_join_dfs = []
+        master_join_dfs = []        
         
         for x in dataframes:
             if x.attrs['nomenclature_tool'] == NomenclatureTools.HGVS.value:
@@ -104,23 +100,25 @@ class JoinAndCompare(object):
             elif x.attrs['nomenclature_tool'] == NomenclatureTools.ANNOVAR.value:
                 inner_join_dfs.append(x)
             elif x.attrs['nomenclature_tool'] == NomenclatureTools.CGD.value:
-                outer_join_dfs.append(x)
+                master_join_dfs.append(x)
             elif x.attrs['nomenclature_tool'] == NomenclatureTools.SNPEFF.value:
                 outer_join_dfs.append(x)
             elif x.attrs['nomenclature_tool'] == NomenclatureTools.TFX.value:
-                inner_join_dfs.append(x)
+                master_join_dfs.append(x)
             elif x.attrs['nomenclature_tool'] == NomenclatureTools.VEP_HG19.value:
                 inner_join_dfs.append(x)
             elif x.attrs['nomenclature_tool'] == NomenclatureTools.VEP_REFSEQ.value:
                 inner_join_dfs.append(x)
             else:
                 raise ValueError(f"Unknown tool: {x.attrs['nomenclature_tool']}")
-                
+
+        master_df = pd.concat(master_join_dfs, axis=1, join='outer')
         inner_df = pd.concat(inner_join_dfs, axis=1, join='inner')
         
+        final_master = pd.concat([master_df, inner_df], axis=1, join='outer')
         aux_df = pd.concat(outer_join_dfs, axis=1, join='outer')
-                
-        merged_df = inner_df.join(aux_df, how='left')
+        merged_df = final_master.join(aux_df, how='left')
+
         return merged_df    
         
     def get_comparison_df(self, dataframes: list[pd.DataFrame]):
@@ -137,8 +135,7 @@ class JoinAndCompare(object):
         
         # Add a field indicating when cgd&annovar agree but disagree with tfx&vepHg19 on c_dot
         merged_df = self._add_consensus_conflict_field(merged_df, ['cgd', 'annovar'], ['tfx', 'vep_hg19'], ['c_dot'], 'ca_vs_tvv_conflict')
-        
-                        
+
         return merged_df
 
     def _calculate_pairwise_score(self, merged_df: pd.DataFrame, tool_dataframes: list[pd.DataFrame], fields_to_compare: list[str], new_field_name):

@@ -4,29 +4,29 @@
 include { validateParameters; paramsSummaryLog } from 'plugin/nf-validation'
 include { findGapVariants } from './modules/local/variants/find_gap_variants.nf'
 include { getTfxVariants } from './modules/local/variants/get_tfx_variants.nf'
-include { writeHgvsNomenclatureToCsv} from './modules/local/write_hgvs_nomenclature_to_csv.nf'
-include { csvToAvinput } from './modules/local/csv_to_avinput.nf'
-include { runAnnovar } from './modules/local/run_annovar.nf'
-include { writeAnnovarNomenclatureToCsv } from './modules/local/write_annovar_nomenclature_to_csv.nf'
-include { csvToVcf } from './modules/local/csv_to_vcf.nf'
-include { runSnpEff } from './modules/local/run_snpeff.nf'
-include { writeSnpEffNomenclatureToCsv } from './modules/local/write_snpeff_nomenclature_to_csv.nf'
-include { runVep as runVepRefseq } from './modules/local/run_vep.nf'
-include { runVep as runVepHg19 } from './modules/local/run_vep.nf'
-include { writeVepNomenclatureToCsv as writeVepRefseqNomenclatureToCsv } from './modules/local/write_vep_nomenclature_to_csv.nf'
-include { writeVepNomenclatureToCsv as writeVepHg19NomenclatureToCsv } from './modules/local/write_vep_nomenclature_to_csv.nf'
-include { writeTfxNomenclatureToCsv } from './modules/local/write_tfx_nomenclature_to_csv.nf'
-include { writeCgdNomenclatureToCsv } from './modules/local/write_cgd_nomenclature_to_csv.nf'
-include { joinAndCompare } from './modules/local/join_and_compare.nf'
-include { performAnalysis } from './modules/local/perform_analysis.nf'
-include { filterNomenclature as filterHgvsNomenclature} from './modules/local/filter_nomenclature.nf'
-include { filterNomenclature as filterAnnovarNomenclature} from './modules/local/filter_nomenclature.nf'
-include { filterNomenclature as filterSnpeffNomenclature} from './modules/local/filter_nomenclature.nf'
-include { filterNomenclature as filterVepRefseqNomenclature} from './modules/local/filter_nomenclature.nf'
-include { filterNomenclature as filterVepHg19Nomenclature} from './modules/local/filter_nomenclature.nf'
-include { filterNomenclature as filterTfxNomenclature} from './modules/local/filter_nomenclature.nf'
-include { filterNomenclature as filterCgdNomenclature} from './modules/local/filter_nomenclature.nf'
-include { writeExonDetail } from './modules/local/write_exon_detail.nf'
+include { writeHgvsNomenclatureToCsv} from './modules/local/main/write_hgvs_nomenclature_to_csv.nf'
+include { csvToAvinput } from './modules/local/main/csv_to_avinput.nf'
+include { runAnnovar } from './modules/local/main/run_annovar.nf'
+include { writeAnnovarNomenclatureToCsv } from './modules/local/main/write_annovar_nomenclature_to_csv.nf'
+include { csvToVcf } from './modules/local/main/csv_to_vcf.nf'
+include { runSnpEff } from './modules/local/main/run_snpeff.nf'
+include { writeSnpEffNomenclatureToCsv } from './modules/local/main/write_snpeff_nomenclature_to_csv.nf'
+include { runVep as runVepRefseq } from './modules/local/main/run_vep.nf'
+include { runVep as runVepHg19 } from './modules/local/main/run_vep.nf'
+include { writeVepNomenclatureToCsv as writeVepRefseqNomenclatureToCsv } from './modules/local/main/write_vep_nomenclature_to_csv.nf'
+include { writeVepNomenclatureToCsv as writeVepHg19NomenclatureToCsv } from './modules/local/main/write_vep_nomenclature_to_csv.nf'
+include { writeTfxNomenclatureToCsv } from './modules/local/main/write_tfx_nomenclature_to_csv.nf'
+include { writeCgdNomenclatureToCsv } from './modules/local/main/write_cgd_nomenclature_to_csv.nf'
+include { joinAndCompare } from './modules/local/main/join_and_compare.nf'
+include { performAnalysis } from './modules/local/main/perform_analysis.nf'
+include { filterNomenclature as filterHgvsNomenclature} from './modules/local/main/filter_nomenclature.nf'
+include { filterNomenclature as filterAnnovarNomenclature} from './modules/local/main/filter_nomenclature.nf'
+include { filterNomenclature as filterSnpeffNomenclature} from './modules/local/main/filter_nomenclature.nf'
+include { filterNomenclature as filterVepRefseqNomenclature} from './modules/local/main/filter_nomenclature.nf'
+include { filterNomenclature as filterVepHg19Nomenclature} from './modules/local/main/filter_nomenclature.nf'
+include { filterNomenclature as filterTfxNomenclature} from './modules/local/main/filter_nomenclature.nf'
+include { filterNomenclature as filterCgdNomenclature} from './modules/local/main/filter_nomenclature.nf'
+include { writeExonDetail } from './modules/local/main/write_exon_detail.nf'
 
 workflow {
     main:
@@ -152,7 +152,7 @@ workflow {
     writeExonDetail(ncbi_refseq_gff_db, ncbi_refseq_gff_accession_index_df, ch_final_tool_outputs)
     
     // error "STOPPING WORKFLOW for debuging"
-    
+
     // Compare hgvs and annovar, join hgvs, annovar, and gaps file into final output
     joinAndCompare(ch_hgvs_nomenclature_filtered.ifEmpty([]),
                    ch_annovar_filtered,

@@ -20,8 +20,6 @@ import gffutils
 import pandas as pd
 from collections import Counter
 
-DEBUG = True
-
 _index_counter = Counter()
 
 def _create_gff_db(args):
@@ -138,7 +136,7 @@ def _get_ccds_accession_gff_indexes(gff_db, gap_map_map):
 
         n = n + 1
         if n % 100000 == 0:
-            print(f"  Processed {n} CSD features so far")
+            print(f"  Processed {n} CDS features so far")
     
     print(f"  Found {len(data)} CCDS transcripts")
     _index_counter['ccds_transcripts'] += len(data)
@@ -158,17 +156,28 @@ def _create_accession_index(args):
     accession_gff_indexes.extend(_get_ccds_accession_gff_indexes(gff_db, gap_map_map))
     
     print("Creating index dataframe...")
-    df = pd.DataFrame(accession_gff_indexes)    
+    df = pd.DataFrame(accession_gff_indexes)
+    target_cols = ['accession', 'feature_id', 'type', 'gap', 'target_start', 'target_end']
+    df = df.reindex(columns=target_cols)
+    df = df.astype({
+        'target_start': 'Int64',
+        'target_end': 'Int64',
+        'gap': 'string'
+    })
+    
+    
     df = df.drop_duplicates(subset=['accession'])
     df = df.set_index('accession').sort_index()
     
     print(f"Saving dataframe {args.out_parquet}...")
     print(f"{_index_counter}")
+    
+    # Write out an binary, indexed version of the dataframe
     df.to_parquet(args.out_parquet)
     
-    if DEBUG:
-        print(f"DEBUG={DEBUG}: Saving /tmp/accession_index.csv")
-        df.to_csv("/tmp/accession_index.csv")
+    # Optionally, write out a csv to make it easier for human review
+    if args.out_csv:        
+        df.to_csv(args.out_csv)
         
 def get_feature_id(db, accession):
     if accession.startswith(('NM', 'NP')):
@@ -210,6 +219,7 @@ def main():
     gff_to_db_parser.set_defaults(func=lambda args: _create_accession_index(args))
     gff_to_db_parser.add_argument("--gff_db", help="gffutils gff database (db)", required=True)
     gff_to_db_parser.add_argument("--out_parquet", help="Index file (parquet)", required=True)
+    gff_to_db_parser.add_argument("--out_csv", help="Index file (csv)", required=False)
     
     args = parser.parse_args()
     
