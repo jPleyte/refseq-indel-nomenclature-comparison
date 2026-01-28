@@ -7,6 +7,9 @@ Helper methods for workign with gffutils
   - usage: python -m rinc.io.gffutils_helper createAccessionIndex --gff_db GCF_file.gff.db --out_parquet GCF_file_accession_index.parquet
 
 The gff can be any but i am using GCF_000001405.25_GRCh37.p13_genomic.gff.gz from https://ftp.ncbi.nlm.nih.gov/genomes/refseq/vertebrate_mammalian/Homo_sapiens/all_assembly_versions/GCF_000001405.25_GRCh37.p13/
+
+Known bug:
+* CCDS accessions have more than one entry
     
 Usage:
  
@@ -156,18 +159,18 @@ def _create_accession_index(args):
     accession_gff_indexes.extend(_get_ccds_accession_gff_indexes(gff_db, gap_map_map))
     
     print("Creating index dataframe...")
-    df = pd.DataFrame(accession_gff_indexes)
-    target_cols = ['accession', 'feature_id', 'type', 'gap', 'target_start', 'target_end']
-    df = df.reindex(columns=target_cols)
-    df = df.astype({
-        'target_start': 'Int64',
-        'target_end': 'Int64',
-        'gap': 'string'
-    })
-    
-    
-    df = df.drop_duplicates(subset=['accession'])
-    df = df.set_index('accession').sort_index()
+    df = (
+        pd.DataFrame(accession_gff_indexes)
+        .drop_duplicates(subset=['accession', 'gap', 'target_start', 'target_end'])
+        .reindex(columns=['accession', 'feature_id', 'type', 'gap', 'target_start', 'target_end'])
+        .astype({
+            'target_start': 'Int64',
+            'target_end': 'Int64',
+            'gap': 'string'
+        })
+        .set_index('accession')
+        .sort_index()
+    )
     
     print(f"Saving dataframe {args.out_parquet}...")
     print(f"{_index_counter}")
@@ -177,6 +180,7 @@ def _create_accession_index(args):
     
     # Optionally, write out a csv to make it easier for human review
     if args.out_csv:        
+        print(f"Saving csv dataframe: {args.out_csv}")
         df.to_csv(args.out_csv)
         
 def get_feature_id(db, accession):

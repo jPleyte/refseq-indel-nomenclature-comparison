@@ -8,7 +8,7 @@ process joinAndCompare {
 
     input:
     path hgvs_nomenclature    
-    path annovar_nomenclaturee
+    path annovar_nomenclature
     path snpeff_nomenclature
     path vep_refseq_nomenclautre
     path vep_hg19_nomenclature
@@ -28,7 +28,7 @@ process joinAndCompare {
         ${hgvs_nomenclature_arg} \
         ${tfx_nomenclature_arg} \
         ${cgd_nomenclature_arg} \
-        --annovar_nomenclature ${annovar_nomenclaturee} \
+        --annovar_nomenclature ${annovar_nomenclature} \
         --snpeff_nomenclature ${snpeff_nomenclature} \
         --vep_refseq_nomenclautre ${vep_refseq_nomenclautre} \
         --vep_hg19_nomenclature ${vep_hg19_nomenclature} \

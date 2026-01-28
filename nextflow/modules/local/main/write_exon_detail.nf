@@ -4,6 +4,8 @@
  * Write exon coordinates and cigar strings for each transcripts 
  */
 process writeExonDetail {
+    publishDir "${params.outdir}", mode: 'symlink'
+
     input:
     path ncbi_refseq_gff_db
     path ncbi_refseq_gff_accession_index_df

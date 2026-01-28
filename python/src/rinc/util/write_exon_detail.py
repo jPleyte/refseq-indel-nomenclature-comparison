@@ -76,7 +76,10 @@ class WriteExonDetail(object):
         exon_number = 0
         for x in exons:
             exon_number += 1
-            gap_attribute = x.attributes.get('Gap', [None])[0]
+            
+            # jDebug: Use the accession index to get gap information 
+            gap_attribute = 'jDebug: fix this'
+            
             if gap_attribute:
                 self._transcript_lookup_counts['gaps'] += 1
                 
@@ -87,7 +90,9 @@ class WriteExonDetail(object):
                                  'stop': x.stop,
                                  'strand': strand,
                                  'gene': x.attributes['gene'][0],
-                                 'length': len(x)
+                                 'length': len(x),
+                                 'gap': gap_attribute
+                                 
                                  })
 
         return exon_details
@@ -110,10 +115,10 @@ class WriteExonDetail(object):
         
         n = 0
         
-        self._transcripts.clear()        
-        self._transcripts.add("NM_001167672.3")
-        self._transcripts.add("NM_015068.3")
-        self._transcripts.add("NM_013386.4")
+        # self._transcripts.clear()        
+        # self._transcripts.add("NM_001167672.3")
+        # self._transcripts.add("NM_015068.3")
+        # self._transcripts.add("NM_013386.4")
         
         for x in self._transcripts:
             feature = self._get_feature(x)
