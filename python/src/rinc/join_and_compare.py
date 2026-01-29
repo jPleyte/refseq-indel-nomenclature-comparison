@@ -22,6 +22,7 @@ class NomenclatureTools(Enum):
     CGD = "cgd"
     VEP_REFSEQ = "vep_refseq"
     VEP_HG19 = "vep_hg19"
+    REFERENCE_GAP = "gap" # Not actually a nomenclature tool
 
 class JoinAndCompare(object):
     '''
@@ -32,6 +33,7 @@ class JoinAndCompare(object):
         Constructor
         '''
         self._logger = logging.getLogger(__name__)
+        self._index_cols = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript']
                 
     def _get_all_variant_transcripts(self, dataframes: list[pd.DataFrame]) -> list[VariantTranscript]:
         """
@@ -47,7 +49,18 @@ class JoinAndCompare(object):
 
         return variant_transcripts
     
-    def get_nomenclature_df(self, nomenclature_tool: str, csv_file: str, remove_label: str):
+    def get_info_df(self, csv_file: str, info_tool_name: str):
+        """
+        Open and return a csv dataframe adding making it a MultiIndex with 0 level id of info_tool_name        
+        """
+        if not csv_file:
+            return None
+        
+        df = pd.read_csv(csv_file)
+        df.attrs['info_tool'] = info_tool_name
+        return df
+        
+    def get_nomenclature_df(self, nomenclature_tool_name: str, csv_file: str, remove_label: str):
         """
         Read a file containing variant transcript nomenclature.
         If the file doesn't exist then an empty dataframe is returned.
@@ -57,14 +70,14 @@ class JoinAndCompare(object):
         """
         df = pd.read_csv(csv_file, dtype=str)
         
-        index_cols = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript']
+        index_cols = self._index_cols
         df.set_index(index_cols, inplace=True, drop=False)
 
         df.columns = [x.replace(remove_label, '') for x in df.columns]
-        df.columns = pd.MultiIndex.from_product([[nomenclature_tool.value], df.columns])
+        df.columns = pd.MultiIndex.from_product([[nomenclature_tool_name], df.columns])
         
-        df.attrs['nomenclature_tool'] = nomenclature_tool.value
-        self._logger.info(f"Read {df.shape[0]} rows for {nomenclature_tool} from {csv_file}")
+        df.attrs['nomenclature_tool'] = nomenclature_tool_name
+        self._logger.info(f"Read {df.shape[0]} rows for {nomenclature_tool_name} from {csv_file}")
         return df
 
     def _get_variant_transcript_row(self, df, chromosome, position, reference, alt, cdna_transcript):
@@ -84,44 +97,17 @@ class JoinAndCompare(object):
     def _get_merged_df(self, dataframes: list[pd.DataFrame]):
         """
         Merge all the dataframes into one. 
-        I don't want to inner join them all because that is very limiting.
-        I don't want to outter join them all because that will give me too much.
-        
-        So i keep everything from CGD and Tfx since they'r ewhat we're most interested in. 
-        I inner join annovar and vep     
-        """
-        inner_join_dfs = []  
-        outer_join_dfs = []
-        master_join_dfs = []        
-        
-        for x in dataframes:
-            if x.attrs['nomenclature_tool'] == NomenclatureTools.HGVS.value:
-                outer_join_dfs.append(x)
-            elif x.attrs['nomenclature_tool'] == NomenclatureTools.ANNOVAR.value:
-                inner_join_dfs.append(x)
-            elif x.attrs['nomenclature_tool'] == NomenclatureTools.CGD.value:
-                master_join_dfs.append(x)
-            elif x.attrs['nomenclature_tool'] == NomenclatureTools.SNPEFF.value:
-                outer_join_dfs.append(x)
-            elif x.attrs['nomenclature_tool'] == NomenclatureTools.TFX.value:
-                master_join_dfs.append(x)
-            elif x.attrs['nomenclature_tool'] == NomenclatureTools.VEP_HG19.value:
-                inner_join_dfs.append(x)
-            elif x.attrs['nomenclature_tool'] == NomenclatureTools.VEP_REFSEQ.value:
-                inner_join_dfs.append(x)
-            else:
-                raise ValueError(f"Unknown tool: {x.attrs['nomenclature_tool']}")
-
-        master_df = pd.concat(master_join_dfs, axis=1, join='outer')
-        inner_df = pd.concat(inner_join_dfs, axis=1, join='inner')
-        
-        final_master = pd.concat([master_df, inner_df], axis=1, join='outer')
-        aux_df = pd.concat(outer_join_dfs, axis=1, join='outer')
-        merged_df = final_master.join(aux_df, how='left')
+        I don't want to inner join them all because that is too limiting.
+        Outter join ends up with a lot of sparse fields, but it's what i've decided to do.
+        """        
+        merged_df = reduce(
+            lambda left, right: pd.merge(left, right, on=['chromosome','position','reference', 'alt','cdna_transcript'], how='outer'), 
+            dataframes
+        )
 
         return merged_df    
         
-    def get_comparison_df(self, dataframes: list[pd.DataFrame]):
+    def get_comparison_df(self, dataframes: list[pd.DataFrame], gff_and_uta_exon_gap_info_df, preferred_transcript_df=None):
         """
         Compare dataframes with each other and return a dataframe with comparison score         
         """
@@ -135,9 +121,70 @@ class JoinAndCompare(object):
         
         # Add a field indicating when cgd&annovar agree but disagree with tfx&vepHg19 on c_dot
         merged_df = self._add_consensus_conflict_field(merged_df, ['cgd', 'annovar'], ['tfx', 'vep_hg19'], ['c_dot'], 'ca_vs_tvv_conflict')
+        
+        # Add a field indicating which transcripts are known to have gaps/misalignment
+        merged_df = self._add_gap_and_cigar_field(merged_df, gff_and_uta_exon_gap_info_df)
 
+        # Add a field inndicating which accessions are preferred/reported transcripts
+        if preferred_transcript_df is not None:
+            merged_df = self._add_preferred_transcript_field(merged_df, preferred_transcript_df)
+                
         return merged_df
 
+    def _add_preferred_transcript_field(self, merged_df, preferred_transcript_df):
+        """
+        Add a field with a "1" wherever the cdna_transcript matches in mergrd_df matches a cdna_transcrpt in preferred_tranascript_df 
+        """
+        pt_label = NomenclatureTools.CGD.value
+
+        # 1. Prepare the lookup table: set 'cdna_transcript' as the index
+        # Ensure it's unique so the mapping is 1:1
+        lookup = preferred_transcript_df.drop_duplicates('cdna_transcript').set_index('cdna_transcript')
+    
+        # 2. Extract the 'cdna_transcript' level from the merged_df index
+        # This gets the transcript ID for every row without moving it out of the index
+        transcript_ids = merged_df.index.get_level_values('cdna_transcript')
+    
+        # 3. Create the binary flag
+        # We map the transcript_ids to the lookup index. 
+        # If it's in the lookup, it gets a value; if not, it gets NaN.
+        # Then we just check .notna()
+        merged_df[(pt_label, 'is_preferred')] = (
+            transcript_ids.map(lambda x: x in lookup.index).astype(int)
+        )
+       
+        return merged_df
+        
+        
+    def _add_gap_and_cigar_field(self, merged_df, gff_and_uta_exon_gap_info_df):
+        """
+        Join the dataframe that is a list of all the transcripts which are known to have reference gaps.
+        The dataframe has two cigar columns: gff_cigars, uta_cigars
+        Add a field is_gap_transcript to make it clear which transcripts were joined.
+        """
+        gap_label = NomenclatureTools.REFERENCE_GAP.value
+        
+        # 1. Prepare the lookup table: set 'accession' as the index
+        # Ensure it's unique so the mapping is 1:1
+        lookup = gff_and_uta_exon_gap_info_df.drop_duplicates('accession').set_index('accession')
+    
+        # 2. Extract the 'cdna_transcript' level from the merged_df index
+        # This gets the transcript ID for every row without moving it out of the index
+        transcript_ids = merged_df.index.get_level_values('cdna_transcript')
+    
+        # 3. Map the cigar values directly to new MultiIndex columns
+        # .map() follows the index level values and pulls data from the lookup table
+        merged_df[(gap_label, 'gff_cigars')] = transcript_ids.map(lookup['gff_cigars'])
+        merged_df[(gap_label, 'uta_cigars')] = transcript_ids.map(lookup['uta_cigars'])
+    
+        # 4. Create your binary flag
+        has_gff = merged_df[(gap_label, 'gff_cigars')].notna()
+        has_uta = merged_df[(gap_label, 'uta_cigars')].notna()
+        merged_df[(gap_label, 'is_gap_transcript')] = (has_gff | has_uta).astype(int)
+    
+        return merged_df
+        
+        
     def _calculate_pairwise_score(self, merged_df: pd.DataFrame, tool_dataframes: list[pd.DataFrame], fields_to_compare: list[str], new_field_name):
         """
         Compare the fields_to_compare   
@@ -419,13 +466,16 @@ def _parse_args():
     parser = argparse.ArgumentParser(description='Read Annovar multianno file, extract values and write to new csv')
 
     parser.add_argument('--hgvs_nomenclature', help='hgvs/uta values (csv)', required=False)
-    parser.add_argument('--tfx_nomenclature', help="Optional Transcript Effect/tfx values (csv)", required=False)
-    parser.add_argument('--cgd_nomenclature', help='CGD values (csv)', required=False)
+    parser.add_argument('--tfx_nomenclature', help="Optional Transcript Effect/tfx nomenclature (csv)", required=False)
+    parser.add_argument('--cgd_nomenclature', help='CGD nomenclature (csv)', required=False)
     
-    parser.add_argument('--annovar_nomenclature', help='Annovar values (csv)', required=True)    
-    parser.add_argument('--snpeff_nomenclature', help='SnpEff values (csv)', required=True)    
-    parser.add_argument('--vep_refseq_nomenclautre', help='mutalyzer values (csv)', required=True)
-    parser.add_argument('--vep_hg19_nomenclature', help='mutalyzer values (csv)', required=True)
+    parser.add_argument('--annovar_nomenclature', help='Annovar nomenclature (csv)', required=True)    
+    parser.add_argument('--snpeff_nomenclature', help='SnpEff nomenclature (csv)', required=True)    
+    parser.add_argument('--vep_refseq_nomenclautre', help='VEP Refseq nomenclature (csv)', required=True)
+    parser.add_argument('--vep_hg19_nomenclature', help='Vep hg19 nomenclature (csv)', required=True)
+
+    parser.add_argument('--gff_and_uta_exon_gap_info', help='Transcripts with refseq/hg19 alignment gaps (csv)', required=True)
+    parser.add_argument('--preferred_transcripts', help='Preferred/reported transcripts (csv)', required=False)
     
     parser.add_argument("--out", help="output file (csv)", required=True)
 
@@ -445,21 +495,27 @@ def main():
     
     # The hgvs and tfx dataframes are optional
     if args.hgvs_nomenclature:
-        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.HGVS, args.hgvs_nomenclature, 'hu.'))
+        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.HGVS.value, args.hgvs_nomenclature, 'hu.'))
     if args.tfx_nomenclature:
-        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.TFX, args.tfx_nomenclature, '.tfx'))
+        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.TFX.value, args.tfx_nomenclature, '.tfx'))
     if args.cgd_nomenclature:
-        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.CGD, args.cgd_nomenclature, '.cgd'))
+        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.CGD.value, args.cgd_nomenclature, '.cgd'))
         
     # In the future i will make this optional but for now they're always being generated 
-    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.ANNOVAR, args.annovar_nomenclature, '.annovar'))    
-    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.SNPEFF, args.snpeff_nomenclature, 'snpeff.'))
-    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_REFSEQ, args.vep_refseq_nomenclautre, 'vep.refseq.'))    
-    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_HG19, args.vep_hg19_nomenclature, 'vep.hg19.'))
+    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.ANNOVAR.value, args.annovar_nomenclature, '.annovar'))    
+    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.SNPEFF.value, args.snpeff_nomenclature, 'snpeff.'))
+    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_REFSEQ.value, args.vep_refseq_nomenclautre, 'vep.refseq.'))    
+    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_HG19.value, args.vep_hg19_nomenclature, 'vep.hg19.'))
+    
+    # Transcripts with alignment gaps 
+    gff_and_uta_exon_gap_info_df = jc.get_info_df(args.gff_and_uta_exon_gap_info, NomenclatureTools.REFERENCE_GAP.value)
+    
+    # Transcripts that have been reported in CGD
+    preferred_transcript_df = jc.get_info_df(args.preferred_transcripts, NomenclatureTools.CGD.value)
     
     # Compare exon, c., and p. from all datasources. 
-    comparison_df = jc.get_comparison_df(dataframes)
-    
+    comparison_df = jc.get_comparison_df(dataframes, gff_and_uta_exon_gap_info_df, preferred_transcript_df)
+        
     # Left join all datasets to the variant list. Write out all rows and all fields
     jc.write(args.out, comparison_df)
     

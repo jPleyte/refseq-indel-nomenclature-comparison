@@ -13,13 +13,13 @@
             "type": "string",
             "description": "Nomenclature exported from CGD and saved as parquet (See variant_nomenclature_db.py)"
         },
+        "preferred_transcripts": {
+            "type": "string",
+            "description": "List of transcript accessions we are interested in. Unlike variant_transcript_filter, this list does not limit output it just adds an is_preferred field to the comparison df."
+        },
         "ncbi_refseq_gff_db": {
             "type": "string",
             "description": "NCBI RefSeq genome annotation in db format (See gffutils_helper.py createDb)"
-        },
-        "ncbi_refseq_gff_accession_index_df": {
-            "type": "string",
-            "description": "GFF accession index (See gffutils_helper.py createAccessionIndex)"
         },
         "vep_fasta": {
             "type": "string",

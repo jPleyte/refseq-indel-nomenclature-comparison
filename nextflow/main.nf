@@ -1,6 +1,6 @@
 #!/usr/bin/env nextflow
 
-// Import the processes from your modules folder
+// main processes
 include { validateParameters; paramsSummaryLog } from 'plugin/nf-validation'
 include { findGapVariants } from './modules/local/variants/find_gap_variants.nf'
 include { getTfxVariants } from './modules/local/variants/get_tfx_variants.nf'
@@ -28,12 +28,15 @@ include { filterNomenclature as filterTfxNomenclature} from './modules/local/mai
 include { filterNomenclature as filterCgdNomenclature} from './modules/local/main/filter_nomenclature.nf'
 include { writeExonDetail } from './modules/local/main/write_exon_detail.nf'
 
+// workflows 
+include  { EXTRACT_EXON_GAP_INFO } from './subworkflows/local/extract_exon_gap_info.nf'
+
 workflow {
     main:
     uta_schema = channel.value(params.uta_schema)
     fasta_ch = channel.fromPath(params.fasta, checkIfExists: true)
     ncbi_refseq_gff_db = channel.fromPath(params.ncbi_refseq_gff_db, checkIfExists: true)
-    ncbi_refseq_gff_accession_index_df = channel.fromPath(params.ncbi_refseq_gff_accession_index_df, checkIfExists: true)
+    preferred_transcripts = channel.fromPath(params.preferred_transcripts, checkIfExists: true)
 
     def vep_sequence_modes = [
         refseq: "--use_transcript_ref",
@@ -148,9 +151,11 @@ workflow {
         "Collected Outputs:\n" + list.collect { tuple -> "  - $tuple" }.join("\n") 
     }
 
+    // Use a gff and the UTA db to create a file with all known transcripts that have reference gaps)
+    def gff_and_uta_exon_gap_info = EXTRACT_EXON_GAP_INFO(ncbi_refseq_gff_db, uta_schema).gff_and_uta_exon_gap_info
+
     // Write out exon position and cigar strings for every transcript    
-    writeExonDetail(ncbi_refseq_gff_db, ncbi_refseq_gff_accession_index_df, ch_final_tool_outputs)
-    
+    // writeExonDetail(ncbi_refseq_gff_db, ncbi_refseq_gff_accession_index_df, ch_final_tool_outputs)    
     // error "STOPPING WORKFLOW for debuging"
 
     // Compare hgvs and annovar, join hgvs, annovar, and gaps file into final output
@@ -160,7 +165,9 @@ workflow {
                    ch_vepRefSeq_filtered,
                    ch_vepHg19_filtered,
                    ch_tfx_filtered.ifEmpty([]),
-                   ch_cgd_filtered.ifEmpty([]))
+                   ch_cgd_filtered.ifEmpty([]),
+                   gff_and_uta_exon_gap_info,
+                   preferred_transcripts)
 
     performAnalysis(ch_hgvs_nomenclature_filtered.ifEmpty([]),
                     ch_annovar_filtered,
