@@ -1,1 +1,0 @@
-../../python/src/rinc/hgvs_uta/extract_uta_exon_gap_info.py

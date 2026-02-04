@@ -28,7 +28,19 @@ class PDot(object):
         self._logger = logging.getLogger(__name__)
         self._hp = hgvs.parser.Parser()
     
-    def get_p_dot1(self, transcript, p_dot3: str) -> str:
+    def get_remove_parenthesis(self, transcript: str, p_dot: str, is_three_letter=True) -> str:
+        """
+        Remove the parenthesis indicating that the p. is "inferred" 
+        """
+        try:
+            var_p = self._hp.parse_p_variant(f"{transcript}:{p_dot}")
+            var_p.posedit.uncertain = False            
+            p_dot = var_p.format(conf={"p_3_letter": is_three_letter})
+            return p_dot.split(':')[1]
+        except HGVSParseError as e:
+            self._logger.warning(f"Error parsing {p_dot} for transcript {transcript}, will use backup method: {e}")
+
+    def get_p_dot1(self, transcript: str, p_dot3: str) -> str:
         '''
         Convert 3-letter p. to 1-letter
         '''
@@ -46,8 +58,7 @@ class PDot(object):
     def get_p_dot3(self, transcript, p_dot1: str) -> str:
         '''
         Convert 3-letter p. to 1-letter
-        '''
-        
+        '''        
         var_p = self._hp.parse_p_variant(f"{transcript}:{p_dot1}")
         p_dot3 = var_p.format(conf={"p_3_letter": True})
         return p_dot3.split(':')[1]

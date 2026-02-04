@@ -12,6 +12,6 @@ process EXTRACT_UTA_EXON_GAP_INFO {
 
     script:
     """
-    python ${projectDir}/bin/extract_uta_exon_gap_info.py --uta_schema ${uta_schema} --out_csv uta_exon_gap_info.csv
+    python -m rinc.hgvs_uta.extract_uta_exon_gap_info --uta_schema ${uta_schema} --out_csv uta_exon_gap_info.csv
     """
 }

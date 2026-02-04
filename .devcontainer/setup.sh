@@ -5,7 +5,7 @@ sudo apt-get update
 sudo apt-get install -y samtools perl wget tabix libpq-dev awscli
 
 
-/opt/conda/bin/pip install psycopg2-binary hgvs pysam biopython pandas natsort pyarrow xlsxwriter openpyxl gffutils
+/opt/conda/bin/pip install psycopg2-binary hgvs pysam biopython pandas natsort pyarrow xlsxwriter openpyxl gffutils matplotlib
 
 mkdir -p data
 

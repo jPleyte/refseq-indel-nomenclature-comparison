@@ -14,25 +14,30 @@ process joinAndCompare {
     path vep_refseq_nomenclautre
     path vep_hg19_nomenclature
     path tfx_nomenclature
-    path cgd_nomenclature    
+    path cgd_nomenclature
+    path mutalyzer_nomenclature
     
     // Additional inputs 
     path gff_and_uta_exon_gap_info
     path preferred_transcripts
 
     output:
-    path "nomenclature_comparison.xlsx", emit: nomenclature_comparison
+    path "nomenclature_comparison.xlsx", emit: nomenclature_comparison_xlsx
 
     script:
     def tfx_nomenclature_arg = tfx_nomenclature ? "--tfx_nomenclature $tfx_nomenclature" : ""
     def hgvs_nomenclature_arg = hgvs_nomenclature ? "--hgvs_nomenclature $hgvs_nomenclature" : ""
     def cgd_nomenclature_arg = cgd_nomenclature ? "--cgd_nomenclature $cgd_nomenclature" : ""
+    def mutalyzer_nomenclature_arg = mutalyzer_nomenclature ? "--mutalyzer_nomenclature $mutalyzer_nomenclature" : ""
+    
     def preferred_transcripts_arg = preferred_transcripts ? "--preferred_transcripts $preferred_transcripts" : ""
+    
     """
     python -m rinc.join_and_compare                              \
         ${hgvs_nomenclature_arg}                                 \
         ${tfx_nomenclature_arg}                                  \
         ${cgd_nomenclature_arg}                                  \
+        ${mutalyzer_nomenclature_arg}                            \
         --annovar_nomenclature ${annovar_nomenclature}           \
         --snpeff_nomenclature ${snpeff_nomenclature}             \
         --vep_refseq_nomenclautre ${vep_refseq_nomenclautre}     \

@@ -81,10 +81,7 @@ class CgdNomenclature(object):
         # variant_helper.write_variant_transcripts(out_filename, variant_transcripts, [], 'cgd')
         key_headers = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript' ] 
         nomenclature_headers = ['c_dot', 'exon', 'gene', 'p_dot1', 'p_dot3', 'protein_transcript', 'protein_variant_type', 'splicing']
-    
-        # Caller can spcify that columns not be included (eg Annovar never has p_dot3 or protein transcript)
-        suffixed_headers = [x + "." + 'cgd' for x in nomenclature_headers]
-        all_headers = key_headers + suffixed_headers 
+        all_headers = key_headers + nomenclature_headers 
     
         rows = 0
         with open(out_filename, 'w', newline='', encoding='utf-8') as f:

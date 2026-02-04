@@ -22,6 +22,7 @@ class NomenclatureTools(Enum):
     CGD = "cgd"
     VEP_REFSEQ = "vep_refseq"
     VEP_HG19 = "vep_hg19"
+    MUTALYZER = "mutalyzer"
     REFERENCE_GAP = "gap" # Not actually a nomenclature tool
 
 class JoinAndCompare(object):
@@ -60,7 +61,7 @@ class JoinAndCompare(object):
         df.attrs['info_tool'] = info_tool_name
         return df
         
-    def get_nomenclature_df(self, nomenclature_tool_name: str, csv_file: str, remove_label: str):
+    def get_nomenclature_df(self, nomenclature_tool_name: str, csv_file: str, remove_label: str=None):
         """
         Read a file containing variant transcript nomenclature.
         If the file doesn't exist then an empty dataframe is returned.
@@ -73,7 +74,10 @@ class JoinAndCompare(object):
         index_cols = self._index_cols
         df.set_index(index_cols, inplace=True, drop=False)
 
-        df.columns = [x.replace(remove_label, '') for x in df.columns]
+        if remove_label:
+            self._logger.info(f"Removing {remove_label} label from fields in {nomenclature_tool_name} df")
+            df.columns = [x.replace(remove_label, '') for x in df.columns]
+            
         df.columns = pd.MultiIndex.from_product([[nomenclature_tool_name], df.columns])
         
         df.attrs['nomenclature_tool'] = nomenclature_tool_name
@@ -137,24 +141,14 @@ class JoinAndCompare(object):
         """
         pt_label = NomenclatureTools.CGD.value
 
-        # 1. Prepare the lookup table: set 'cdna_transcript' as the index
-        # Ensure it's unique so the mapping is 1:1
-        lookup = preferred_transcript_df.drop_duplicates('cdna_transcript').set_index('cdna_transcript')
-    
-        # 2. Extract the 'cdna_transcript' level from the merged_df index
-        # This gets the transcript ID for every row without moving it out of the index
-        transcript_ids = merged_df.index.get_level_values('cdna_transcript')
-    
-        # 3. Create the binary flag
-        # We map the transcript_ids to the lookup index. 
-        # If it's in the lookup, it gets a value; if not, it gets NaN.
-        # Then we just check .notna()
-        merged_df[(pt_label, 'is_preferred')] = (
-            transcript_ids.map(lambda x: x in lookup.index).astype(int)
+        # Use .isin() - this is a vectorized membership check
+        # It checks all rows at once in optimized C code
+        is_pref_bool = merged_df.index.get_level_values('cdna_transcript').isin(
+            preferred_transcript_df['cdna_transcript']
         )
-       
-        return merged_df
         
+        merged_df[(pt_label, 'is_preferred')] = is_pref_bool.astype(int)
+        return merged_df
         
     def _add_gap_and_cigar_field(self, merged_df, gff_and_uta_exon_gap_info_df):
         """
@@ -375,15 +369,26 @@ class JoinAndCompare(object):
                     ]
                                 
         field_order = ['c_dot', 'p_dot1', 'exon', 'g_dot']
+        summary_flags = ['cgd_is_preferred', 'gap_is_gap_transcript']
 
-        # 4. The Sort
+        # 5. Perform the Tiered Sort
+        # Tier 0: nomenclature ending in field_order
+        # Tier 1: summary flags
+        # Tier 2: concordance scores
+        # Tier 3: everything else
         sorted_nom_cols = sorted(
             nom_cols, 
             key=lambda x: (
-                next((i for i, f in enumerate(field_order) if x.endswith(f)), len(field_order)),
+                0 if any(x.endswith(f) for f in field_order) else
+                1 if x in summary_flags else
+                2 if x.startswith('scores_') else                
+                3,
+                # Sub-sort Tier 0 based on field_order index
+                next((i for i, f in enumerate(field_order) if x.endswith(f)), 0),
+                # Final alphabetical tie-breaker,
                 x
             )
-        )
+        )        
         
         final_column_order = index_cols + sorted_nom_cols
         return flat_df[final_column_order]        
@@ -468,6 +473,7 @@ def _parse_args():
     parser.add_argument('--hgvs_nomenclature', help='hgvs/uta values (csv)', required=False)
     parser.add_argument('--tfx_nomenclature', help="Optional Transcript Effect/tfx nomenclature (csv)", required=False)
     parser.add_argument('--cgd_nomenclature', help='CGD nomenclature (csv)', required=False)
+    parser.add_argument('--mutalyzer_nomenclature', help='Mutalyzer nomenclature (csv)', required=False)
     
     parser.add_argument('--annovar_nomenclature', help='Annovar nomenclature (csv)', required=True)    
     parser.add_argument('--snpeff_nomenclature', help='SnpEff nomenclature (csv)', required=True)    
@@ -477,8 +483,10 @@ def _parse_args():
     parser.add_argument('--gff_and_uta_exon_gap_info', help='Transcripts with refseq/hg19 alignment gaps (csv)', required=True)
     parser.add_argument('--preferred_transcripts', help='Preferred/reported transcripts (csv)', required=False)
     
-    parser.add_argument("--out", help="output file (csv)", required=True)
-
+    parser.add_argument("--out", help="output file (xlsx)", required=True)
+    
+    parser.add_argument("--out_parquet", help="Write the MultiIndex dataframe to this output file so it can be used by other scripts (parquet)", required=False)
+    
     parser.add_argument("--version", action="version", version="0.0.1")
 
     return parser.parse_args()
@@ -493,13 +501,15 @@ def main():
     
     dataframes = []
     
-    # The hgvs and tfx dataframes are optional
+    # Some dataframes are optional
     if args.hgvs_nomenclature:
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.HGVS.value, args.hgvs_nomenclature, 'hu.'))
     if args.tfx_nomenclature:
-        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.TFX.value, args.tfx_nomenclature, '.tfx'))
+        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.TFX.value, args.tfx_nomenclature))
     if args.cgd_nomenclature:
-        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.CGD.value, args.cgd_nomenclature, '.cgd'))
+        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.CGD.value, args.cgd_nomenclature))
+    if args.mutalyzer_nomenclature:
+        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.MUTALYZER.value, args.cgd_nomenclature))
         
     # In the future i will make this optional but for now they're always being generated 
     dataframes.append(jc.get_nomenclature_df(NomenclatureTools.ANNOVAR.value, args.annovar_nomenclature, '.annovar'))    

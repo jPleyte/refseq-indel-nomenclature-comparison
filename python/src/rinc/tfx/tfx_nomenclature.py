@@ -89,7 +89,7 @@ class TfxNomenclature(object):
     def write(self, out_filename, variant_transcripts: list[VariantTranscript]):
         """
         """
-        variant_helper.write_variant_transcripts(out_filename, variant_transcripts, ['splicing', 'vrnt_type'], 'tfx')
+        variant_helper.write_variant_transcripts(out_filename, variant_transcripts, ['splicing', 'vrnt_type'])
         self._logger.info(f"Wrote {len(variant_transcripts)} variant transcripts to {out_filename}")
 
 def _parse_args():

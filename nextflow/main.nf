@@ -1,5 +1,17 @@
 #!/usr/bin/env nextflow
 
+/*
+This workflow gathers nomnenclature data from multiple tools, converts their proprietary formats to csv so they all use the same fields, and then compares them and writes
+the results to an excel spreadsheet.
+
+# To Do
+- [ ] Delete "writeExonDetail" (around line 164) because exon/gap analysis has been moved to the main spreadsheet.  See also ncbi_refseq_gff_db
+- [ ] The "ch_all_labeled" channel is a mix of all data, but is not currently used. 
+- [ ] Right now VariantValidator is limitd to the rows where cgd and tfx have the same c. value (see writeVariantValidatorBatch). Why not fetch all variant transcripts? 
+- [ ] You remove the filter code but still have a "ch_variant_transcript_filter" channel and paremter that aren't being used.
+- [ ] The performAnalysis process pairwise_equality.py script is no longer working so i have commented it out in perform_analysis.nf
+*/
+
 // main processes
 include { validateParameters; paramsSummaryLog } from 'plugin/nf-validation'
 include { findGapVariants } from './modules/local/variants/find_gap_variants.nf'
@@ -19,14 +31,8 @@ include { writeTfxNomenclatureToCsv } from './modules/local/main/write_tfx_nomen
 include { writeCgdNomenclatureToCsv } from './modules/local/main/write_cgd_nomenclature_to_csv.nf'
 include { joinAndCompare } from './modules/local/main/join_and_compare.nf'
 include { performAnalysis } from './modules/local/main/perform_analysis.nf'
-include { filterNomenclature as filterHgvsNomenclature} from './modules/local/main/filter_nomenclature.nf'
-include { filterNomenclature as filterAnnovarNomenclature} from './modules/local/main/filter_nomenclature.nf'
-include { filterNomenclature as filterSnpeffNomenclature} from './modules/local/main/filter_nomenclature.nf'
-include { filterNomenclature as filterVepRefseqNomenclature} from './modules/local/main/filter_nomenclature.nf'
-include { filterNomenclature as filterVepHg19Nomenclature} from './modules/local/main/filter_nomenclature.nf'
-include { filterNomenclature as filterTfxNomenclature} from './modules/local/main/filter_nomenclature.nf'
-include { filterNomenclature as filterCgdNomenclature} from './modules/local/main/filter_nomenclature.nf'
-include { writeExonDetail } from './modules/local/main/write_exon_detail.nf'
+include { writeVariantValidatorNomenclature } from './modules/local/main/write_variant_validator_nomenclature.nf'
+include { writeVariantValidatorBatch } from './modules/local/main/write_variant_validator_batch.nf'
 
 // workflows 
 include  { EXTRACT_EXON_GAP_INFO } from './subworkflows/local/extract_exon_gap_info.nf'
@@ -35,7 +41,7 @@ workflow {
     main:
     uta_schema = channel.value(params.uta_schema)
     fasta_ch = channel.fromPath(params.fasta, checkIfExists: true)
-    ncbi_refseq_gff_db = channel.fromPath(params.ncbi_refseq_gff_db, checkIfExists: true)
+    // ncbi_refseq_gff_db = channel.fromPath(params.ncbi_refseq_gff_db, checkIfExists: true)
     preferred_transcripts = channel.fromPath(params.preferred_transcripts, checkIfExists: true)
 
     def vep_sequence_modes = [
@@ -43,7 +49,9 @@ workflow {
         reference: "--use_given_ref"
     ]
 
-    validateParameters()
+    validateParameters(strict: true,
+                        showFullError: true,
+                        failOnValidationErrors: true)
 
     println "Using variant source: ${params.variant_source}"
     if (params.variant_source != 'gap_query') {
@@ -86,10 +94,9 @@ workflow {
 
     // Generate nomenclature using hgvs package. 
     // Do not generate hgvs nomenclature when input source is 'tfx' but tfx uses the same code.    
-    def ch_hgvs_nomenclature_filtered = channel.empty() 
+    def ch_hgvs_nomenclature = channel.empty() 
      if (params.variant_source != 'tfx') {
-        hgvs_nomenclature = writeHgvsNomenclatureToCsv(fasta_ch, ch_variants)
-        ch_hgvs_nomenclature_filtered = filterHgvsNomenclature(hgvs_nomenclature, ch_variant_transcript_filter)    
+        ch_hgvs_nomenclature = writeHgvsNomenclatureToCsv(fasta_ch, ch_variants)
      }
     
     // Convert variant list to annovar avinput file 
@@ -99,9 +106,8 @@ workflow {
     runAnnovar(csvToAvinput.out.annovar_avinput)
 
     // Extract annovar nomenclature and write to new csv
-    def ch_annovar_raw =writeAnnovarNomenclatureToCsv(runAnnovar.out.multianno)
-    def ch_annovar_filtered = filterAnnovarNomenclature(ch_annovar_raw.annovar_nomenclature, ch_variant_transcript_filter)
-    
+    def ch_annovar_nomenclature = writeAnnovarNomenclatureToCsv(runAnnovar.out.multianno)
+
     // Convert variant list to vcf to be used by SnpEff and VEP
     csvToVcf(ch_variants)
 
@@ -109,40 +115,45 @@ workflow {
     runSnpEff(csvToVcf.out.vcf)
 
     // Extract SnpEff nomenclature and write to new csv
-    writeSnpEffNomenclatureToCsv(runSnpEff.out.snpeff_tsv)
-    def ch_snpeff_filtered = filterSnpeffNomenclature(writeSnpEffNomenclatureToCsv.out.snpeff_nomenclature, ch_variant_transcript_filter)
-
+    def ch_snpeff_nomenclature = writeSnpEffNomenclatureToCsv(runSnpEff.out.snpeff_tsv)
+    
     // Run VEP onece using coding sequence for reference andusing hg19 for reference 
     runVepRefseq(csvToVcf.out.vcf, params.vep_fasta, 'refseq', vep_sequence_modes.refseq)
     runVepHg19(csvToVcf.out.vcf, params.vep_fasta, 'hg19', vep_sequence_modes.reference)
 
     // extract VEP nomenclature and write to new csv
-    writeVepRefseqNomenclatureToCsv(runVepRefseq.out.vep_output, 'refseq')
-    writeVepHg19NomenclatureToCsv(runVepHg19.out.vep_output, 'hg19')
-
-    // Filter the two VEP outputs
-    def ch_vepRefSeq_filtered = filterVepRefseqNomenclature(writeVepRefseqNomenclatureToCsv.out.vep_nomenclature, ch_variant_transcript_filter)
-    def ch_vepHg19_filtered = filterVepHg19Nomenclature(writeVepHg19NomenclatureToCsv.out.vep_nomenclature, ch_variant_transcript_filter)
+    def ch_vepRefSeq_nomenclature = writeVepRefseqNomenclatureToCsv(runVepRefseq.out.vep_output, 'refseq')
+    def ch_vepHg19_nomenclature = writeVepHg19NomenclatureToCsv(runVepHg19.out.vep_output, 'hg19')
     
-    def ch_tfx_filtered = channel.empty()
+    def ch_tfx_nomenclature = channel.empty()
     if (params.variant_source == 'tfx') {
-        tfx_nomenclature = writeTfxNomenclatureToCsv(fasta_ch, params.variant_source_file)
-        ch_tfx_filtered = filterTfxNomenclature(tfx_nomenclature, ch_variant_transcript_filter)
+        ch_tfx_nomenclature = writeTfxNomenclatureToCsv(fasta_ch, params.variant_source_file)
     }
 
-    def ch_cgd_filtered = channel.empty()
+    def ch_cgd_nomenclature = channel.empty()
     if (params.cgd_export_df != null) {
-        cgd_nomenclature = writeCgdNomenclatureToCsv(params.cgd_export_df, ch_variants)
-        ch_cgd_filtered = filterCgdNomenclature(cgd_nomenclature, ch_variant_transcript_filter)
+        ch_cgd_nomenclature = writeCgdNomenclatureToCsv(params.cgd_export_df, ch_variants)
     }
 
-    def ch_all_labeled = ch_hgvs_nomenclature_filtered.map { file -> ["hgvs_uta", file] }
-        .mix( ch_annovar_filtered.map { file -> ["annovar", file] } )
-        .mix( ch_snpeff_filtered.map  { file -> ["snpeff", file] } )
-        .mix( ch_vepRefSeq_filtered.map { file -> ["vep_refseq", file] } )
-        .mix( ch_vepHg19_filtered.map   { file -> ["vep_hg19", file] } )
-        .mix( ch_tfx_filtered.map       { file -> ["tfx", file] } )
-        .mix( ch_cgd_filtered.map       { file -> ["cgd", file] } )
+    def variant_validator_nomenclature = channel.empty()
+    if (params.variant_validator_batch_results) {
+        variant_validator_nomenclature = writeVariantValidatorNomenclature(params.variant_validator_batch_results)
+    }
+
+    def ch_mutalyzer_nomenclature = channel.empty()
+    if (params.mutalyzer_nomenclature_file) {
+        ch_mutalyzer_nomenclature = channel.fromPath(params.mutalyzer_nomenclature_file, checkIfExists: true)
+    }
+
+    def ch_all_labeled = ch_hgvs_nomenclature.map { file -> ["hgvs_uta", file] }
+        .mix( ch_annovar_nomenclature.map { file -> ["annovar", file] } )
+        .mix( ch_snpeff_nomenclature.map  { file -> ["snpeff", file] } )
+        .mix( ch_vepRefSeq_nomenclature.map { file -> ["vep_refseq", file] } )
+        .mix( ch_vepHg19_nomenclature.map   { file -> ["vep_hg19", file] } )
+        .mix( ch_tfx_nomenclature.map       { file -> ["tfx", file] } )
+        .mix( ch_cgd_nomenclature.map       { file -> ["cgd", file] } )
+        .mix( variant_validator_nomenclature.map       { file -> ["vv", file] } )
+        .mix( ch_mutalyzer_nomenclature.map               { file -> ["mut", file] } )
 
     def ch_final_tool_outputs = ch_all_labeled.toList()
 
@@ -152,28 +163,37 @@ workflow {
     }
 
     // Use a gff and the UTA db to create a file with all known transcripts that have reference gaps)
-    def gff_and_uta_exon_gap_info = EXTRACT_EXON_GAP_INFO(ncbi_refseq_gff_db, uta_schema).gff_and_uta_exon_gap_info
+    // def gff_and_uta_exon_gap_info = EXTRACT_EXON_GAP_INFO(ncbi_refseq_gff_db, uta_schema).gff_and_uta_exon_gap_info
 
+    // jDebug: Delete this
     // Write out exon position and cigar strings for every transcript    
     // writeExonDetail(ncbi_refseq_gff_db, ncbi_refseq_gff_accession_index_df, ch_final_tool_outputs)    
     // error "STOPPING WORKFLOW for debuging"
 
     // Compare hgvs and annovar, join hgvs, annovar, and gaps file into final output
-    joinAndCompare(ch_hgvs_nomenclature_filtered.ifEmpty([]),
-                   ch_annovar_filtered,
-                   ch_snpeff_filtered,
-                   ch_vepRefSeq_filtered,
-                   ch_vepHg19_filtered,
-                   ch_tfx_filtered.ifEmpty([]),
-                   ch_cgd_filtered.ifEmpty([]),
+    joinAndCompare(ch_hgvs_nomenclature.ifEmpty([]),
+                   ch_annovar_nomenclature,
+                   ch_snpeff_nomenclature,
+                   ch_vepRefSeq_nomenclature,
+                   ch_vepHg19_nomenclature,
+                   ch_tfx_nomenclature.ifEmpty([]),
+                   ch_cgd_nomenclature.ifEmpty([]),
+                   ch_mutalyzer_nomenclature.ifEmpty([]),
                    gff_and_uta_exon_gap_info,
                    preferred_transcripts)
 
-    performAnalysis(ch_hgvs_nomenclature_filtered.ifEmpty([]),
-                    ch_annovar_filtered,
-                    ch_snpeff_filtered,
-                    ch_vepRefSeq_filtered,
-                    ch_vepHg19_filtered,
-                    ch_tfx_filtered.ifEmpty([]),
-                    ch_cgd_filtered.ifEmpty([]))
+    /*
+    performAnalysis(ch_hgvs_nomenclature.ifEmpty([]),
+                    ch_annovar_nomenclature,
+                    ch_snpeff_nomenclature,
+                    ch_vepRefSeq_nomenclature,
+                    ch_vepHg19_nomenclature,
+                    ch_tfx_nomenclature.ifEmpty([]),
+                    ch_cgd_nomenclature.ifEmpty([]),
+                    ch_mutalyzer_nomenclature.ifEmpty([])) */
+
+    // Create a batch file of variants to submit to Variant Validator 
+    if (params.generate_variant_validator_batch) {
+        writeVariantValidatorBatch(ch_cgd_nomenclature, ch_tfx_nomenclature)
+    }
 }
