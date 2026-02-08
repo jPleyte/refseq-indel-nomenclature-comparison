@@ -5,7 +5,7 @@ This workflow gathers nomnenclature data from multiple tools, converts their pro
 the results to an excel spreadsheet.
 
 # To Do
-- [ ] Delete "writeExonDetail" (around line 164) because exon/gap analysis has been moved to the main spreadsheet.  See also ncbi_refseq_gff_db
+- [ ] Delete "writeExonDetail" (around line 164) because exon/gap analysis has been moved to the main spreadsheet.  
 - [ ] The "ch_all_labeled" channel is a mix of all data, but is not currently used. 
 - [ ] Right now VariantValidator is limitd to the rows where cgd and tfx have the same c. value (see writeVariantValidatorBatch). Why not fetch all variant transcripts? 
 - [ ] You remove the filter code but still have a "ch_variant_transcript_filter" channel and paremter that aren't being used.
@@ -41,17 +41,15 @@ workflow {
     main:
     uta_schema = channel.value(params.uta_schema)
     fasta_ch = channel.fromPath(params.fasta, checkIfExists: true)
-    // ncbi_refseq_gff_db = channel.fromPath(params.ncbi_refseq_gff_db, checkIfExists: true)
+    ncbi_refseq_gff_db = channel.fromPath(params.ncbi_refseq_gff_db, checkIfExists: true)
     preferred_transcripts = channel.fromPath(params.preferred_transcripts, checkIfExists: true)
 
     def vep_sequence_modes = [
         refseq: "--use_transcript_ref",
-        reference: "--use_given_ref"
+        reference: "--use_given_ref"        
     ]
-
-    validateParameters(strict: true,
-                        showFullError: true,
-                        failOnValidationErrors: true)
+    
+    validateParameters()
 
     println "Using variant source: ${params.variant_source}"
     if (params.variant_source != 'gap_query') {
@@ -163,7 +161,7 @@ workflow {
     }
 
     // Use a gff and the UTA db to create a file with all known transcripts that have reference gaps)
-    // def gff_and_uta_exon_gap_info = EXTRACT_EXON_GAP_INFO(ncbi_refseq_gff_db, uta_schema).gff_and_uta_exon_gap_info
+    def gff_and_uta_exon_gap_info = EXTRACT_EXON_GAP_INFO(ncbi_refseq_gff_db, uta_schema).gff_and_uta_exon_gap_info
 
     // jDebug: Delete this
     // Write out exon position and cigar strings for every transcript    

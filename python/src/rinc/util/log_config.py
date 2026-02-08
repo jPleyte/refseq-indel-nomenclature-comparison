@@ -47,3 +47,38 @@ class LogConfig(object):
                 }
             }
         }
+        
+        self.file_config = { 
+            'version': 1,
+            'disable_existing_loggers': False,
+            'formatters': {
+                'standard': { 
+                    'format': '%(asctime)s: %(levelname)s: %(name)s::%(module)s:%(lineno)s: %(message)s'
+                },
+            },
+            'handlers': {
+                'default': {                     
+                    'formatter': 'standard',
+                    'class': 'logging.FileHandler',
+                    'filename': 'rinc.log', 
+                    'mode': 'a'
+                },
+            },
+            'loggers': { 
+                '': {  # root logger
+                    'level': 'WARNING',
+                    'handlers': ['default'],
+                    'propagate': False
+                },
+                'rinc': { 
+                    'level': 'DEBUG',
+                    'handlers': ['default'],
+                    'propagate': False,
+                },
+                '__main__': { 
+                    'level': 'DEBUG',
+                    'handlers': ['default'],
+                    'propagate': False,
+                }
+            }
+        }

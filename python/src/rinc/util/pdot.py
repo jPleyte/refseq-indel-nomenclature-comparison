@@ -31,7 +31,10 @@ class PDot(object):
     def get_remove_parenthesis(self, transcript: str, p_dot: str, is_three_letter=True) -> str:
         """
         Remove the parenthesis indicating that the p. is "inferred" 
-        """
+        """ 
+        if p_dot == "p.?":
+            return p_dot
+        
         try:
             var_p = self._hp.parse_p_variant(f"{transcript}:{p_dot}")
             var_p.posedit.uncertain = False            
@@ -51,7 +54,7 @@ class PDot(object):
         except HGVSParseError as e:
             self._logger.warning(f"Error parsing {p_dot3} for transcript {transcript}, will use backup method: {e}")
         
-        # Weird p. cause errors in hgvs so we resort to regex mapping        
+        # A weird p. cause errors in hgvs so we resort to regex mapping        
         return self.get_map_pdot3_to_pdot1(p_dot3)
             
 
