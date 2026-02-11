@@ -215,6 +215,9 @@ data/Homo_sapiens_assembly*
 data/vep/*
 data/cgd/*
 data/gff/*
+data/variant_validator/*
+data/mutalyzer/*
+
 nextflow/work
 nextflow/results*
 nextflow/.nextflow

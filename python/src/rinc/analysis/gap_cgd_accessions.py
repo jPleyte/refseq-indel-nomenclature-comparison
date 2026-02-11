@@ -175,6 +175,7 @@ def apply_comparison_format(worksheet, tfx_comparison_df, col_a_name, col_b_name
             FormulaRule(formula=[f'${let_a}2<>${let_b}2'], stopIfTrue=True, fill=red_fill))
     except KeyError:
         pass
+
 def main():
     
     parser = argparse.ArgumentParser(description='Identify CGD''s reported transcripts that are known to have reference gaps')

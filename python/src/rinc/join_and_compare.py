@@ -22,6 +22,7 @@ class NomenclatureTools(Enum):
     CGD = "cgd"
     VEP_REFSEQ = "vep_refseq"
     VEP_HG19 = "vep_hg19"
+    VARIANT_VALIDATOR = "vv"
     MUTALYZER = "mutalyzer"
     REFERENCE_GAP = "gap" # Not actually a nomenclature tool
 
@@ -473,6 +474,7 @@ def _parse_args():
     parser.add_argument('--hgvs_nomenclature', help='hgvs/uta values (csv)', required=False)
     parser.add_argument('--tfx_nomenclature', help="Optional Transcript Effect/tfx nomenclature (csv)", required=False)
     parser.add_argument('--cgd_nomenclature', help='CGD nomenclature (csv)', required=False)
+    parser.add_argument('--variant_validator_nomenclature', help='Variant Validator nomenclature (csv)', required=False)
     parser.add_argument('--mutalyzer_nomenclature', help='Mutalyzer nomenclature (csv)', required=False)
     
     parser.add_argument('--annovar_nomenclature', help='Annovar nomenclature (csv)', required=True)    
@@ -508,6 +510,8 @@ def main():
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.TFX.value, args.tfx_nomenclature))
     if args.cgd_nomenclature:
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.CGD.value, args.cgd_nomenclature))
+    if args.variant_validator_nomenclature:
+        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VARIANT_VALIDATOR.value, args.variant_validator_nomenclature))
     if args.mutalyzer_nomenclature:
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.MUTALYZER.value, args.cgd_nomenclature))
         

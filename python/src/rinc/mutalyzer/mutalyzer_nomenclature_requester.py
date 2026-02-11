@@ -199,7 +199,6 @@ class MutalyzerNomenclatureRequester(object):
                 self._variant_counter['already_processed'] += 1
                 continue
 
-
             try:
                 self._per_variant_request_counter = 0
                 self._per_variant_transcript_filter_counter = 0

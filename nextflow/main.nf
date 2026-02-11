@@ -135,7 +135,8 @@ workflow {
 
     def variant_validator_nomenclature = channel.empty()
     if (params.variant_validator_batch_results) {
-        variant_validator_nomenclature = writeVariantValidatorNomenclature(params.variant_validator_batch_results)
+        ch_variant_validator_batch_results = channel.fromPath(params.variant_validator_batch_results, checkIfExists: true)
+        ch_variant_validator_nomenclature = writeVariantValidatorNomenclature(ch_variant_validator_batch_results)
     }
 
     def ch_mutalyzer_nomenclature = channel.empty()
@@ -149,9 +150,9 @@ workflow {
         .mix( ch_vepRefSeq_nomenclature.map { file -> ["vep_refseq", file] } )
         .mix( ch_vepHg19_nomenclature.map   { file -> ["vep_hg19", file] } )
         .mix( ch_tfx_nomenclature.map       { file -> ["tfx", file] } )
-        .mix( ch_cgd_nomenclature.map       { file -> ["cgd", file] } )
-        .mix( variant_validator_nomenclature.map       { file -> ["vv", file] } )
-        .mix( ch_mutalyzer_nomenclature.map               { file -> ["mut", file] } )
+        .mix( ch_cgd_nomenclature.map               { file -> ["cgd", file] } )
+        .mix( ch_variant_validator_nomenclature.map { file -> ["vv", file] } )
+        .mix( ch_mutalyzer_nomenclature.map         { file -> ["mut", file] } )
 
     def ch_final_tool_outputs = ch_all_labeled.toList()
 
@@ -176,6 +177,7 @@ workflow {
                    ch_vepHg19_nomenclature,
                    ch_tfx_nomenclature.ifEmpty([]),
                    ch_cgd_nomenclature.ifEmpty([]),
+                   ch_variant_validator_nomenclature.ifEmpty([]),
                    ch_mutalyzer_nomenclature.ifEmpty([]),
                    gff_and_uta_exon_gap_info,
                    preferred_transcripts)
